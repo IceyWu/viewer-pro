@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>高级图片预览组件</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Tailwind 配置 -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#3B82F6",
+              secondary: "#10B981",
+              dark: "#1E293B",
+              light: "#F8FAFC",
+            },
+            fontFamily: {
+              inter: ["Inter", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- 自定义工具类 -->
+    <style type="text/tailwindcss">
+      @layer utilities {
+        .content-auto {
+          content-visibility: auto;
+        }
+        .transition-custom {
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .backdrop-blur-xl {
+          backdrop-filter: blur(24px);
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      }
+    </style>
+
+    <style>
+      /* 全局样式 */
+      body {
+        font-family: "Inter", sans-serif;
+      }
+
+      /* 图片预览组件样式 */
+      .image-preview-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5000;
+        display: none;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .image-preview-container.active {
+        display: flex;
+        animation: fadeIn 0.3s ease forwards;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .image-preview-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(8px);
+      }
+
+      .image-preview-content {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 1rem;
+      }
+
+      .image-preview-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        padding: 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        z-index: 10;
+      }
+
+      .image-preview-title {
+        color: white;
+        font-size: 1.25rem;
+        font-weight: 500;
+        max-width: 80%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .image-preview-close {
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+
+      .image-preview-close:hover {
+        transform: scale(1.1);
+      }
+
+      .image-preview-controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding: 1.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        background: linear-gradient(
+          to top,
+          rgba(0, 0, 0, 0.7) 0%,
+          rgba(0, 0, 0, 0) 100%
+        );
+      }
+
+      .control-button {
+        background-color: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(8px);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 2.5rem;
+        height: 2.5rem;
+        margin: 0 0.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .control-button:hover {
+        background-color: rgba(255, 255, 255, 0.3);
+        transform: scale(1.05);
+      }
+
+      .control-button:active {
+        transform: scale(0.95);
+      }
+
+      .control-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .image-preview-counter {
+        color: white;
+        margin: 0 1rem;
+        font-size: 0.9rem;
+      }
+
+      .image-preview-image-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+      }
+
+      .image-preview-image {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        transition: transform 0.3s ease;
+        cursor: grab;
+      }
+
+      .image-preview-image:active {
+        cursor: grabbing;
+      }
+
+      /* 图片加载动画 */
+      .image-loading {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* 图片网格样式 */
+      .image-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+      }
+
+      .image-grid-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        cursor: pointer;
+      }
+
+      .image-grid-item:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+          0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      }
+
+      .image-grid-item img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        transition: transform 0.5s ease;
+      }
+
+      .image-grid-item:hover img {
+        transform: scale(1.05);
+      }
+
+      .image-grid-item-title {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding: 0.5rem;
+        background: linear-gradient(
+          to top,
+          rgba(0, 0, 0, 0.7) 0%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        color: white;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      /* 缩略图导航 */
+      .thumbnail-nav {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 100px;
+        height: 80%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        overflow-y: auto;
+        padding: 0.5rem;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+      }
+
+      .thumbnail-nav::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .thumbnail-nav::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .thumbnail-nav::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.3);
+        border-radius: 20px;
+      }
+
+      .thumbnail {
+        width: 80px;
+        height: 60px;
+        margin: 0.25rem 0;
+        border-radius: 0.25rem;
+        overflow: hidden;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .thumbnail:hover {
+        border-color: rgba(255, 255, 255, 0.5);
+      }
+
+      .thumbnail.active {
+        border-color: white;
+        transform: scale(1.05);
+      }
+
+      .thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      /* 加载状态样式 */
+      .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+
+      /* 错误状态样式 */
+      .error-message {
+        color: white;
+        background-color: rgba(255, 0, 0, 0.2);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        text-align: center;
+      }
+
+      /* 响应式调整 */
+      @media (max-width: 768px) {
+        .thumbnail-nav {
+          display: none;
+        }
+
+        .image-preview-controls {
+          padding: 1rem;
+        }
+
+        .control-button {
+          width: 2.25rem;
+          height: 2.25rem;
+        }
+
+        .image-preview-header {
+          padding: 1rem;
+        }
+
+        .image-preview-title {
+          font-size: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto py-12 px-4">
+      <h1
+        class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-8 text-center"
+      >
+        高级图片预览组件
+      </h1>
+      <p class="text-gray-600 mb-8 text-center max-w-3xl mx-auto">
+        这是一个功能强大的图片预览组件，支持图片缩放、拖拽、切换、全屏等功能，拥有流畅的动画效果和现代感的UI设计。
+      </p>
+
+      <!-- 示例图片网格 -->
+      <div class="image-grid" id="imageGallery">
+        <!-- 示例图片，实际使用时可替换为真实图片 -->
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1015/1200/800"
+          data-title="自然风景"
+        >
+          <img src="https://picsum.photos/id/1015/400/300" alt="自然风景" />
+          <div class="image-grid-item-title">自然风景</div>
+        </div>
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1018/1200/800"
+          data-title="山脉与湖泊"
+        >
+          <img src="https://picsum.photos/id/1018/400/300" alt="山脉与湖泊" />
+          <div class="image-grid-item-title">山脉与湖泊</div>
+        </div>
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1019/1200/800"
+          data-title="自然景观"
+        >
+          <img src="https://picsum.photos/id/1019/400/300" alt="自然景观" />
+          <div class="image-grid-item-title">自然景观</div>
+        </div>
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1039/1200/800"
+          data-title="森林小径"
+        >
+          <img src="https://picsum.photos/id/1039/400/300" alt="森林小径" />
+          <div class="image-grid-item-title">森林小径</div>
+        </div>
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1043/1200/800"
+          data-title="海岸风景"
+        >
+          <img src="https://picsum.photos/id/1043/400/300" alt="海岸风景" />
+          <div class="image-grid-item-title">海岸风景</div>
+        </div>
+        <div
+          class="image-grid-item"
+          data-src="https://picsum.photos/id/1048/1200/800"
+          data-title="城市夜景"
+        >
+          <img src="https://picsum.photos/id/1048/400/300" alt="城市夜景" />
+          <div class="image-grid-item-title">城市夜景</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图片预览组件 -->
+    <div class="image-preview-container" id="imagePreview">
+      <div class="image-preview-overlay"></div>
+      <div class="image-preview-content">
+        <!-- 头部 -->
+        <div class="image-preview-header">
+          <div class="image-preview-title" id="previewTitle">图片预览</div>
+          <div class="image-preview-close" id="closePreview">
+            <i class="fa-solid fa-xmark"></i>
+          </div>
+        </div>
+
+        <!-- 图片区域 -->
+        <div class="image-preview-image-container" id="imageContainer">
+          <!-- 图片加载状态 -->
+          <div class="loading-overlay" id="loadingIndicator">
+            <div class="image-loading"></div>
+          </div>
+
+          <!-- 图片错误状态 -->
+          <div class="error-message" id="errorMessage" style="display: none">
+            <i class="fa-solid fa-exclamation-circle mr-2"></i> 图片加载失败
+          </div>
+
+          <!-- 主图片 -->
+          <img
+            src=""
+            alt="预览图片"
+            class="image-preview-image"
+            id="previewImage"
+          />
+        </div>
+
+        <!-- 缩略图导航 -->
+        <div class="thumbnail-nav" id="thumbnailNav">
+          <!-- 缩略图将通过JavaScript动态生成 -->
+        </div>
+
+        <!-- 底部控制栏 -->
+        <div class="image-preview-controls">
+          <button class="control-button" id="prevImage" title="上一张">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <button class="control-button" id="zoomOut" title="缩小">
+            <i class="fa-solid fa-search-minus"></i>
+          </button>
+          <button class="control-button" id="resetZoom" title="重置缩放">
+            <i class="fa-solid fa-arrows-to-eye"></i>
+          </button>
+          <button class="control-button" id="zoomIn" title="放大">
+            <i class="fa-solid fa-search-plus"></i>
+          </button>
+          <span class="image-preview-counter" id="imageCounter">1 / 1</span>
+          <button class="control-button" id="nextImage" title="下一张">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+          <button class="control-button" id="toggleFullscreen" title="全屏">
+            <i class="fa-solid fa-expand"></i>
+          </button>
+          <button class="control-button" id="downloadImage" title="下载">
+            <i class="fa-solid fa-download"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 引入图片预览JS -->
+    <script src="https://fastly.jsdelivr.net/npm/live-photo@latest"></script>
+    <script src="../dist/ViewerPro.js"></script>
+
+    <script>
+      // 1. 自定义 loading 节点
+      const customLoading = document.createElement("div");
+      customLoading.innerHTML = `
+        <div style="color: #fff; font-size: 18px; display: flex; flex-direction: column; align-items: center;">
+          <svg width="32" height="32" viewBox="0 0 50 50">
+            <circle cx="25" cy="25" r="20" fill="none" stroke="#3B82F6" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
+              <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
+            </circle>
+          </svg>
+          <span>图片加载中11111，请稍候...</span>
+        </div>
+      `;
+
+      // 2. 自定义渲染节点
+      const customRender = (imgObj, idx) => {
+        const box = document.createElement("div");
+        box.style.display = "flex";
+        box.style.flexDirection = "column";
+        box.style.alignItems = "center";
+        box.style.justifyContent = "center";
+        box.style.height = "100%";
+        box.innerHTML = `
+        <div id="live-photo-container"></div>
+          <img src="${
+            imgObj.src
+          }" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
+          <div style="color:#fff;margin-top:8px;">自定义渲染：${
+            imgObj.title || ""
+          }</div>
+        `;
+
+        return box;
+      };
+
+      // 3. 实例化并初始化
+      document.addEventListener("DOMContentLoaded", () => {
+        const preview = new ViewerPro({
+          loadingNode: customLoading,
+          renderNode: customRender,
+          onImageLoad: (imgObj, idx) => {
+            console.log("图片加载完成:", imgObj, idx);
+            const demoSource = {
+              photoSrc:
+                "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
+              videoSrc:
+                "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160657.MOV",
+            };
+            const container = document.getElementById("live-photo-container");
+            new LivePhotoViewer({
+              photoSrc: demoSource.photoSrc,
+              videoSrc: demoSource.videoSrc,
+              container: container,
+              width: 300,
+              height: 300,
+              imageCustomization: {
+                styles: {
+                  objectFit: "cover",
+                  borderRadius: "8px",
+                },
+                attributes: {
+                  alt: "Live Photo Demo",
+                  loading: "lazy",
+                },
+              },
+            });
+          },
+        });
+        const images = Array.from(
+          document.querySelectorAll(".image-grid-item")
+        ).map((item) => ({
+          src: item.dataset.src,
+          thumbnail: item.querySelector("img").src,
+          title: item.dataset.title,
+        }));
+        console.log("🐬-----images-----", images);
+        preview.addImages(images);
+        preview.init();
+      });
+    </script>
+  </body>
+</html>

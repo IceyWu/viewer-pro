@@ -1,0 +1,1 @@
+export { ViewerPro, type ViewerProOptions } from './core/ViewerPro';
