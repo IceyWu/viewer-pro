@@ -1,3 +1,15 @@
+import {
+  closeIcon,
+  prevIcon,
+  nextIcon,
+  zoomInIcon,
+  zoomOutIcon,
+  resetZoomIcon,
+  fullscreenIcon,
+  fullscreenExitIcon,
+  downloadIcon,
+} from './icons';
+
 // 图片预览组件（TypeScript 版，适配模块导出）
 export interface ImageObj {
   src: string;
@@ -42,6 +54,7 @@ export class ViewerPro {
   private startX = 0;
   private startY = 0;
   private isFullscreen = false;
+  private imageLoadToken: number = 0; // 新增
 
   private _boundDrag: (e: MouseEvent | Touch) => void;
   private _boundStopDrag: () => void;
@@ -49,22 +62,60 @@ export class ViewerPro {
   private _boundTouchEnd: () => void;
 
   constructor(options: ViewerProOptions = {}) {
-    this.previewContainer = document.getElementById('imagePreview')!;
-    this.previewImage = document.getElementById('previewImage') as HTMLImageElement;
-    this.previewTitle = document.getElementById('previewTitle')!;
-    this.closeButton = document.getElementById('closePreview')!;
-    this.prevButton = document.getElementById('prevImage') as HTMLButtonElement;
-    this.nextButton = document.getElementById('nextImage') as HTMLButtonElement;
-    this.zoomInButton = document.getElementById('zoomIn') as HTMLButtonElement;
-    this.zoomOutButton = document.getElementById('zoomOut') as HTMLButtonElement;
-    this.resetZoomButton = document.getElementById('resetZoom') as HTMLButtonElement;
-    this.fullscreenButton = document.getElementById('toggleFullscreen') as HTMLButtonElement;
-    this.downloadButton = document.getElementById('downloadImage') as HTMLButtonElement;
-    this.imageCounter = document.getElementById('imageCounter')!;
-    this.loadingIndicator = document.getElementById('loadingIndicator')!;
-    this.errorMessage = document.getElementById('errorMessage')!;
-    this.thumbnailNav = document.getElementById('thumbnailNav')!;
-    this.imageContainer = document.getElementById('imageContainer')!;
+    // 1. 主容器自动创建并插入 body
+    this.previewContainer = document.createElement('div');
+    this.previewContainer.className = 'image-preview-container';
+    this.previewContainer.id = 'imagePreview';
+    document.body.appendChild(this.previewContainer);
+
+    // 2. 内部结构自动生成
+    this.previewContainer.innerHTML = `
+      <div class="image-preview-overlay"></div>
+      <div class="image-preview-content">
+        <div class="image-preview-header">
+          <div class="image-preview-title" id="previewTitle">图片预览</div>
+          <div class="image-preview-close" id="closePreview" style="cursor:pointer;">
+            ${closeIcon}
+          </div>
+        </div>
+        <div class="image-preview-image-container" id="imageContainer">
+          <div class="loading-overlay" id="loadingIndicator" style="display:none;"><div class="image-loading"></div></div>
+          <div class="error-message" id="errorMessage" style="display:none;">
+            图片加载失败
+          </div>
+          <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
+        </div>
+        <div class="thumbnail-nav" id="thumbnailNav"></div>
+        <div class="image-preview-controls">
+          <button class="control-button" id="prevImage" title="上一张">${prevIcon}</button>
+          <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
+          <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
+          <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
+          <span class="image-preview-counter" id="imageCounter">1 / 1</span>
+          <button class="control-button" id="nextImage" title="下一张">${nextIcon}</button>
+          <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
+          <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
+        </div>
+      </div>
+    `;
+
+    // 3. 赋值所有内部节点
+    this.previewImage = this.previewContainer.querySelector('#previewImage') as HTMLImageElement;
+    this.previewTitle = this.previewContainer.querySelector('#previewTitle')!;
+    this.closeButton = this.previewContainer.querySelector('#closePreview')!;
+    this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLButtonElement;
+    this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLButtonElement;
+    this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement;
+    this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement;
+    this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
+    this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement;
+    this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement;
+    this.imageCounter = this.previewContainer.querySelector('#imageCounter')!;
+    this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
+    this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
+    this.thumbnailNav = this.previewContainer.querySelector('#thumbnailNav')!;
+    this.imageContainer = this.previewContainer.querySelector('#imageContainer')!;
+
     this.customLoadingNode = options.loadingNode || null;
     this.customRenderNode = options.renderNode || null;
     this.onImageLoad = typeof options.onImageLoad === 'function' ? options.onImageLoad : null;
@@ -120,14 +171,26 @@ export class ViewerPro {
   }
 
   private updateThumbnails() {
-    this.thumbnailNav.innerHTML = '';
-    this.images.forEach((image, index) => {
-      const thumbnail = document.createElement('div');
-      thumbnail.className = `thumbnail ${index === this.currentIndex ? 'active' : ''}`;
-      thumbnail.innerHTML = `<img src="${image.thumbnail || image.src}" alt="${image.title}">`;
-      thumbnail.addEventListener('click', () => this.open(index));
-      this.thumbnailNav.appendChild(thumbnail);
-    });
+    // 如果 thumbnailNav 还没有内容，首次渲染
+    if (this.thumbnailNav.childNodes.length !== this.images.length) {
+      this.thumbnailNav.innerHTML = '';
+      this.images.forEach((image, index) => {
+        const thumbnail = document.createElement('div');
+        thumbnail.className = `thumbnail${index === this.currentIndex ? ' active' : ''}`;
+        thumbnail.innerHTML = `<img src="${image.thumbnail || image.src}" alt="${image.title}">`;
+        thumbnail.addEventListener('click', () => this.open(index));
+        this.thumbnailNav.appendChild(thumbnail);
+      });
+    } else {
+      // 只更新 active 状态
+      Array.from(this.thumbnailNav.children).forEach((node, idx) => {
+        if (idx === this.currentIndex) {
+          node.classList.add('active');
+        } else {
+          node.classList.remove('active');
+        }
+      });
+    }
   }
 
   public open(index: number) {
@@ -136,8 +199,8 @@ export class ViewerPro {
     this.scale = 1;
     this.translateX = 0;
     this.translateY = 0;
+    this.updateThumbnails(); // 先切换缩略图高亮
     this.updatePreview();
-    this.updateThumbnails();
     this.previewContainer.classList.add('active');
     document.body.style.overflow = 'hidden';
   }
@@ -159,7 +222,12 @@ export class ViewerPro {
     this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
 
     const img = new Image();
+    const thisToken = ++this.imageLoadToken; // 记录本次加载的token
+
     img.onload = () => {
+      // 只处理最后一次请求的图片
+      if (thisToken !== this.imageLoadToken) return;
+
       this.hideLoading();
       if (this.customRenderNode) {
         this.previewImage.style.display = 'none';
@@ -206,6 +274,7 @@ export class ViewerPro {
       this.updateThumbnails();
     };
     img.onerror = () => {
+      if (thisToken !== this.imageLoadToken) return;
       this.hideLoading();
       this.errorMessage.style.display = 'block';
     };
@@ -243,6 +312,7 @@ export class ViewerPro {
     if (newIndex >= 0 && newIndex < this.images.length) {
       this.currentIndex = newIndex;
       this.resetZoom();
+      this.updateThumbnails(); // 先切换缩略图高亮
       this.updatePreview();
     }
   }
@@ -309,17 +379,18 @@ export class ViewerPro {
     document.removeEventListener('touchend', this._boundTouchEnd);
   }
 
+  // 全屏切换时切换图标
   private toggleFullscreen() {
     if (!document.fullscreenElement) {
       this.previewContainer.requestFullscreen?.().catch((err) => {
         console.error(`全屏错误: ${err.message}`);
       });
-      this.fullscreenButton.innerHTML = '<i class="fa-solid fa-compress"></i>';
+      this.fullscreenButton.innerHTML = fullscreenExitIcon;
       this.isFullscreen = true;
     } else {
       if (document.exitFullscreen) {
         document.exitFullscreen();
-        this.fullscreenButton.innerHTML = '<i class="fa-solid fa-expand"></i>';
+        this.fullscreenButton.innerHTML = fullscreenIcon;
         this.isFullscreen = false;
       }
     }
