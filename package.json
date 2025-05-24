@@ -1,6 +1,6 @@
 {
   "name": "viewer-pro",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A ViewerPro viewer for web applications",
   "author": "Icey Wu <3128006406@qq.com>",
   "main": "dist/ViewerPro.js",
