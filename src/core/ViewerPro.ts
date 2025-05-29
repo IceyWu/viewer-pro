@@ -5,28 +5,573 @@ import {
   zoomInIcon,
   zoomOutIcon,
   resetZoomIcon,
-  fullscreenIcon,
-  fullscreenExitIcon,
-  downloadIcon,
 } from './icons';
 
-// 图片预览组件（TypeScript 版，适配模块导出）
+// 图片预览组件（简化版，使用 WebGL 渲染）
 export interface ImageObj {
   src: string;
-  thumbnail?: string;
   title?: string;
 }
 
 export interface ViewerProOptions {
-  loadingNode?: HTMLElement | (() => HTMLElement);
   images?: ImageObj[];
-  renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
-  onImageLoad?: (imgObj: ImageObj, idx: number) => void;
+  webglOptions?: {
+    initialScale?: number;
+    minScale?: number;
+    maxScale?: number;
+    smooth?: boolean;
+    limitToBounds?: boolean;
+  };
+}
+
+// WebGL Image Viewer 引擎
+class WebGLImageViewerEngine {
+  private canvas: HTMLCanvasElement;
+  private gl: WebGLRenderingContext;
+  private program!: WebGLProgram;
+  private texture: WebGLTexture | null = null;
+  private imageLoaded = false;
+
+  // Transform state
+  private scale = 1;
+  private translateX = 0;
+  private translateY = 0;
+  private imageWidth = 0;
+  private imageHeight = 0;
+  private canvasWidth = 0;
+  private canvasHeight = 0;
+
+  // Interaction state
+  private isDragging = false;
+  private lastMouseX = 0;
+  private lastMouseY = 0;
+  private lastTouchDistance = 0;
+
+  // Animation state
+  private isAnimating = false;
+  private animationStartTime = 0;
+  private animationDuration = 300;
+  private startScale = 1;
+  private targetScale = 1;
+  private startTranslateX = 0;
+  private startTranslateY = 0;
+  private targetTranslateX = 0;
+  private targetTranslateY = 0;
+
+  // Configuration
+  private config: Required<NonNullable<ViewerProOptions['webglOptions']>>;
+
+  // Bound event handlers
+  private boundHandleMouseDown: (e: MouseEvent) => void;
+  private boundHandleMouseMove: (e: MouseEvent) => void;
+  private boundHandleMouseUp: () => void;
+  private boundHandleWheel: (e: WheelEvent) => void;
+  private boundHandleDoubleClick: (e: MouseEvent) => void;
+  private boundHandleTouchStart: (e: TouchEvent) => void;
+  private boundHandleTouchMove: (e: TouchEvent) => void;
+  private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundResizeCanvas: () => void;
+
+  // Shaders
+  private vertexShaderSource = `
+    attribute vec2 a_position;
+    attribute vec2 a_texCoord;
+    uniform mat3 u_matrix;
+    varying vec2 v_texCoord;
+    
+    void main() {
+      vec3 position = u_matrix * vec3(a_position, 1.0);
+      gl_Position = vec4(position.xy, 0, 1);
+      v_texCoord = a_texCoord;
+    }
+  `;
+
+  private fragmentShaderSource = `
+    precision mediump float;
+    uniform sampler2D u_image;
+    varying vec2 v_texCoord;
+    
+    void main() {
+      gl_FragColor = texture2D(u_image, v_texCoord);
+    }
+  `;
+
+  constructor(canvas: HTMLCanvasElement, config: NonNullable<ViewerProOptions['webglOptions']> = {}) {
+    this.canvas = canvas;
+    this.config = {
+      initialScale: 1,
+      minScale: 0.1,
+      maxScale: 10,
+      smooth: true,
+      limitToBounds: true,
+      ...config,
+    };
+
+    const gl = canvas.getContext('webgl');
+    if (!gl) {
+      throw new Error('WebGL not supported');
+    }
+    this.gl = gl;
+
+    // Bind event handlers
+    this.boundHandleMouseDown = (e: MouseEvent) => this.handleMouseDown(e);
+    this.boundHandleMouseMove = (e: MouseEvent) => this.handleMouseMove(e);
+    this.boundHandleMouseUp = () => this.handleMouseUp();
+    this.boundHandleWheel = (e: WheelEvent) => this.handleWheel(e);
+    this.boundHandleDoubleClick = (e: MouseEvent) => this.handleDoubleClick(e);
+    this.boundHandleTouchStart = (e: TouchEvent) => this.handleTouchStart(e);
+    this.boundHandleTouchMove = (e: TouchEvent) => this.handleTouchMove(e);
+    this.boundHandleTouchEnd = (e: TouchEvent) => this.handleTouchEnd(e);
+    this.boundResizeCanvas = () => this.resizeCanvas();
+
+    this.setupCanvas();
+    this.initWebGL();
+    this.setupEventListeners();
+  }
+
+  private setupCanvas() {
+    this.resizeCanvas();
+    window.addEventListener('resize', this.boundResizeCanvas);
+  }
+
+  private resizeCanvas() {
+    const rect = this.canvas.getBoundingClientRect();
+    
+    // 如果 getBoundingClientRect 返回的尺寸为 0，使用父容器或默认尺寸
+    let width = rect.width;
+    let height = rect.height;
+    
+    if (width === 0 || height === 0) {
+      // 尝试从父容器获取尺寸
+      const parent = this.canvas.parentElement;
+      if (parent) {
+        const parentRect = parent.getBoundingClientRect();
+        width = parentRect.width || 800; // 默认宽度
+        height = parentRect.height || 600; // 默认高度
+      } else {
+        width = 800;
+        height = 600;
+      }
+      
+      // 强制设置 Canvas 的 CSS 尺寸
+      this.canvas.style.width = width + 'px';
+      this.canvas.style.height = height + 'px';
+    }
+    
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+    
+    // 设置 Canvas 的实际像素尺寸
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    this.canvas.width = width * devicePixelRatio;
+    this.canvas.height = height * devicePixelRatio;
+    
+    // 设置 WebGL 视口
+    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    
+    console.log('Canvas resized to:', { width, height, devicePixelRatio });
+
+    if (this.imageLoaded) {
+      this.fitImageToScreen();
+      this.render();
+    }
+  }
+
+  private initWebGL() {
+    const { gl } = this;
+    const vertexShader = this.createShader(gl.VERTEX_SHADER, this.vertexShaderSource);
+    const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource);
+
+    this.program = gl.createProgram()!;
+    gl.attachShader(this.program, vertexShader);
+    gl.attachShader(this.program, fragmentShader);
+    gl.linkProgram(this.program);
+
+    if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+      throw new Error(`WebGL program link error: ${gl.getProgramInfoLog(this.program)}`);
+    }
+
+    gl.useProgram(this.program);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    // Create geometry
+    const positions = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
+    const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]);
+
+    // Position buffer
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    const positionLocation = gl.getAttribLocation(this.program, 'a_position');
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // Texture coordinate buffer
+    const texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    const texCoordLocation = gl.getAttribLocation(this.program, 'a_texCoord');
+    gl.enableVertexAttribArray(texCoordLocation);
+    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+  }
+
+  private createShader(type: number, source: string): WebGLShader {
+    const { gl } = this;
+    const shader = gl.createShader(type)!;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      throw new Error(`Shader compile error: ${gl.getShaderInfoLog(shader)}`);
+    }
+    return shader;
+  }
+
+  async loadImage(url: string): Promise<void> {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+
+    return new Promise<void>((resolve, reject) => {
+      image.onload = () => {
+        this.imageWidth = image.width;
+        this.imageHeight = image.height;
+        this.createTexture(image);
+        this.imageLoaded = true;
+        this.fitImageToScreen();
+        this.render();
+        resolve();
+      };
+      image.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+      image.src = url;
+    });
+  }
+
+  private createTexture(image: HTMLImageElement) {
+    const { gl } = this;
+    if (this.texture) {
+      gl.deleteTexture(this.texture);
+    }
+
+    this.texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  }
+
+  private createMatrix(): Float32Array {
+    // 修正矩阵计算，考虑设备像素比
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const canvasWidth = this.canvas.width / devicePixelRatio;
+    const canvasHeight = this.canvas.height / devicePixelRatio;
+    
+    const scaleX = (this.imageWidth * this.scale) / canvasWidth;
+    const scaleY = (this.imageHeight * this.scale) / canvasHeight;
+    const translateX = (this.translateX * 2) / canvasWidth;
+    const translateY = -(this.translateY * 2) / canvasHeight;
+    
+    return new Float32Array([
+      scaleX, 0, 0,
+      0, scaleY, 0,
+      translateX, translateY, 1
+    ]);
+  }
+
+  private fitImageToScreen() {
+    const scaleX = this.canvasWidth / this.imageWidth;
+    const scaleY = this.canvasHeight / this.imageHeight;
+    const fitToScreenScale = Math.min(scaleX, scaleY);
+    this.scale = fitToScreenScale * this.config.initialScale;
+    this.translateX = 0;
+    this.translateY = 0;
+  }
+
+  private easeInOutCubic(t: number): number {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  private startAnimation(targetScale: number, targetTranslateX: number, targetTranslateY: number) {
+    this.isAnimating = true;
+    this.animationStartTime = performance.now();
+    this.startScale = this.scale;
+    this.targetScale = targetScale;
+    this.startTranslateX = this.translateX;
+    this.startTranslateY = this.translateY;
+    this.targetTranslateX = targetTranslateX;
+    this.targetTranslateY = targetTranslateY;
+    this.animate();
+  }
+
+  private animate() {
+    if (!this.isAnimating) return;
+
+    const now = performance.now();
+    const elapsed = now - this.animationStartTime;
+    const progress = Math.min(elapsed / this.animationDuration, 1);
+    const easedProgress = this.config.smooth ? this.easeInOutCubic(progress) : progress;
+
+    this.scale = this.startScale + (this.targetScale - this.startScale) * easedProgress;
+    this.translateX = this.startTranslateX + (this.targetTranslateX - this.startTranslateX) * easedProgress;
+    this.translateY = this.startTranslateY + (this.targetTranslateY - this.startTranslateY) * easedProgress;
+
+    this.render();
+
+    if (progress < 1) {
+      requestAnimationFrame(() => this.animate());
+    } else {
+      this.isAnimating = false;
+    }
+  }
+
+  private getFitToScreenScale(): number {
+    const scaleX = this.canvasWidth / this.imageWidth;
+    const scaleY = this.canvasHeight / this.imageHeight;
+    return Math.min(scaleX, scaleY);
+  }
+
+
+
+
+  private constrainImagePosition() {
+    if (!this.config.limitToBounds) return;
+
+    const fitScale = this.getFitToScreenScale();
+    if (this.scale <= fitScale) {
+      this.translateX = 0;
+      this.translateY = 0;
+      return;
+    }
+
+    const scaledWidth = this.imageWidth * this.scale;
+    const scaledHeight = this.imageHeight * this.scale;
+    const maxTranslateX = Math.max(0, (scaledWidth - this.canvasWidth) / 2);
+    const maxTranslateY = Math.max(0, (scaledHeight - this.canvasHeight) / 2);
+
+    this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
+    this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
+  }
+
+  private render() {
+    const { gl } = this;
+    
+    // 清除画布
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clearColor(0.0, 0.0, 0.0, 0.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    if (!this.texture || !this.imageLoaded) {
+      console.log('No texture or image not loaded');
+      return;
+    }
+
+    gl.useProgram(this.program);
+    
+    // 设置矩阵
+    const matrixLocation = gl.getUniformLocation(this.program, 'u_matrix');
+    const matrix = this.createMatrix();
+    gl.uniformMatrix3fv(matrixLocation, false, matrix);
+    
+    // 设置纹理
+    const imageLocation = gl.getUniformLocation(this.program, 'u_image');
+    gl.uniform1i(imageLocation, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    
+    // 绘制
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    
+    console.log('Rendered frame with scale:', this.scale, 'translate:', this.translateX, this.translateY);
+  }
+
+  private setupEventListeners() {
+    this.canvas.addEventListener('mousedown', this.boundHandleMouseDown);
+    this.canvas.addEventListener('wheel', this.boundHandleWheel);
+    this.canvas.addEventListener('dblclick', this.boundHandleDoubleClick);
+    this.canvas.addEventListener('touchstart', this.boundHandleTouchStart);
+  }
+
+  private removeEventListeners() {
+    this.canvas.removeEventListener('mousedown', this.boundHandleMouseDown);
+    this.canvas.removeEventListener('wheel', this.boundHandleWheel);
+    this.canvas.removeEventListener('dblclick', this.boundHandleDoubleClick);
+    this.canvas.removeEventListener('touchstart', this.boundHandleTouchStart);
+    window.removeEventListener('resize', this.boundResizeCanvas);
+  }
+
+  private handleMouseDown(e: MouseEvent) {
+    e.preventDefault();
+    this.isDragging = true;
+    this.lastMouseX = e.clientX;
+    this.lastMouseY = e.clientY;
+    document.addEventListener('mousemove', this.boundHandleMouseMove);
+    document.addEventListener('mouseup', this.boundHandleMouseUp);
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  private handleMouseMove(e: MouseEvent) {
+    if (!this.isDragging) return;
+    e.preventDefault();
+    const deltaX = e.clientX - this.lastMouseX;
+    const deltaY = e.clientY - this.lastMouseY;
+    this.translateX += deltaX;
+    this.translateY += deltaY;
+    this.constrainImagePosition();
+    this.render();
+    this.lastMouseX = e.clientX;
+    this.lastMouseY = e.clientY;
+  }
+
+  private handleMouseUp() {
+    this.isDragging = false;
+    this.canvas.style.cursor = 'grab';
+    document.removeEventListener('mousemove', this.boundHandleMouseMove);
+    document.removeEventListener('mouseup', this.boundHandleMouseUp);
+  }
+
+  private handleWheel(e: WheelEvent) {
+    e.preventDefault();
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    this.zoomAt(x, y, scaleFactor);
+  }
+
+  private handleDoubleClick(e: MouseEvent) {
+    e.preventDefault();
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const fitScale = this.getFitToScreenScale();
+    
+    if (this.scale > fitScale * 1.1) {
+      this.resetView();
+    } else {
+      this.zoomAt(x, y, 2, true);
+    }
+  }
+
+  private handleTouchStart(e: TouchEvent) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      this.isDragging = true;
+      this.lastMouseX = e.touches[0].clientX;
+      this.lastMouseY = e.touches[0].clientY;
+      document.addEventListener('touchmove', this.boundHandleTouchMove);
+      document.addEventListener('touchend', this.boundHandleTouchEnd);
+    } else if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      this.lastTouchDistance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+    }
+  }
+
+  private handleTouchMove(e: TouchEvent) {
+    e.preventDefault();
+    if (e.touches.length === 1 && this.isDragging) {
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - this.lastMouseX;
+      const deltaY = touch.clientY - this.lastMouseY;
+      this.translateX += deltaX;
+      this.translateY += deltaY;
+      this.constrainImagePosition();
+      this.render();
+      this.lastMouseX = touch.clientX;
+      this.lastMouseY = touch.clientY;
+    } else if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const currentDistance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+      
+      if (this.lastTouchDistance > 0) {
+        const scaleFactor = currentDistance / this.lastTouchDistance;
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const centerY = (touch1.clientY + touch2.clientY) / 2;
+        const rect = this.canvas.getBoundingClientRect();
+        this.zoomAt(centerX - rect.left, centerY - rect.top, scaleFactor);
+      }
+      this.lastTouchDistance = currentDistance;
+    }
+  }
+
+  private handleTouchEnd(e: TouchEvent) {
+    this.isDragging = false;
+    this.lastTouchDistance = 0;
+    document.removeEventListener('touchmove', this.boundHandleTouchMove);
+    document.removeEventListener('touchend', this.boundHandleTouchEnd);
+  }
+
+  private zoomAt(x: number, y: number, scaleFactor: number, animated = false) {
+    const oldScale = this.scale;
+    const fitScale = this.getFitToScreenScale();
+    const newScale = Math.max(
+      fitScale * this.config.minScale,
+      Math.min(fitScale * this.config.maxScale, oldScale * scaleFactor)
+    );
+    
+    if (newScale === oldScale) return;
+    
+    const scaleChange = newScale / oldScale;
+    const newTranslateX = x - (x - this.translateX) * scaleChange;
+    const newTranslateY = y - (y - this.translateY) * scaleChange;
+    
+    if (animated) {
+      this.startAnimation(newScale, newTranslateX, newTranslateY);
+    } else {
+      this.scale = newScale;
+      this.translateX = newTranslateX;
+      this.translateY = newTranslateY;
+      this.constrainImagePosition();
+      this.render();
+    }
+  }
+
+  public zoomIn(animated = false) {
+    const centerX = this.canvasWidth / 2;
+    const centerY = this.canvasHeight / 2;
+    this.zoomAt(centerX, centerY, 1.2, animated);
+  }
+
+  public zoomOut(animated = false) {
+    const centerX = this.canvasWidth / 2;
+    const centerY = this.canvasHeight / 2;
+    this.zoomAt(centerX, centerY, 0.8, animated);
+  }
+
+  public resetView() {
+    this.fitImageToScreen();
+    if (this.config.smooth) {
+      this.startAnimation(this.scale, this.translateX, this.translateY);
+    } else {
+      this.render();
+    }
+  }
+
+  public destroy() {
+    this.removeEventListeners();
+    const { gl } = this;
+    if (this.texture) {
+      gl.deleteTexture(this.texture);
+    }
+    if (this.program) {
+      gl.deleteProgram(this.program);
+    }
+  }
 }
 
 export class ViewerPro {
   private previewContainer: HTMLElement;
-  private previewImage: HTMLImageElement;
+  private previewCanvas: HTMLCanvasElement;
+  private webglViewer: WebGLImageViewerEngine | null = null;
   private previewTitle: HTMLElement;
   private closeButton: HTMLElement;
   private prevButton: HTMLDivElement;
@@ -34,90 +579,72 @@ export class ViewerPro {
   private zoomInButton: HTMLButtonElement;
   private zoomOutButton: HTMLButtonElement;
   private resetZoomButton: HTMLButtonElement;
-  private fullscreenButton: HTMLButtonElement;
-  private downloadButton: HTMLButtonElement;
-  private imageCounter: HTMLElement;
   private loadingIndicator: HTMLElement;
   private errorMessage: HTMLElement;
-  private thumbnailNav: HTMLElement;
-  private imageContainer: HTMLElement;
-  private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
-  private customRenderNode: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement) | null;
-  private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
-  private infoPanel: HTMLElement;
-  private infoCollapseBtn: HTMLElement;
-  private progressMask: HTMLElement;
-  private progressText: HTMLElement;
-  private progressPercent: HTMLElement;
-  private progressSize: HTMLElement;
-  private infoPanelContent: HTMLElement;
 
   private images: ImageObj[] = [];
   private currentIndex = 0;
-  private scale = 1;
-  private translateX = 0;
-  private translateY = 0;
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-  private isFullscreen = false;
-  private imageLoadToken: number = 0; // 新增
-
-  private _boundDrag: (e: MouseEvent | Touch) => void;
-  private _boundStopDrag: () => void;
-  private _boundTouchDrag: (e: TouchEvent) => void;
-  private _boundTouchEnd: () => void;
+  private webglOptions: NonNullable<ViewerProOptions['webglOptions']>;
 
   constructor(options: ViewerProOptions = {}) {
-    // 1. 主容器自动创建并插入 body
+    this.webglOptions = {
+      initialScale: 1,
+      minScale: 0.1,
+      maxScale: 10,
+      smooth: true,
+      limitToBounds: true,
+      ...options.webglOptions,
+    };
+
+    // 创建主容器
     this.previewContainer = document.createElement('div');
     this.previewContainer.className = 'image-preview-container';
-    this.previewContainer.id = 'imagePreview';
+    this.previewContainer.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 5000;
+      display: none; background: rgba(0,0,0,0.9); opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
     document.body.appendChild(this.previewContainer);
 
-    // 2. 内部结构自动生成
+    // 创建内部结构
     this.previewContainer.innerHTML = `
-      <div class="image-preview-overlay"></div>
-      <div class="image-preview-content">
-        <div class="image-preview-main-area">
-          <div class="image-preview-header">
-            <div class="image-preview-title" id="previewTitle">图片预览</div>
-            <div class="image-preview-close" id="closePreview" style="cursor:pointer;">
-              ${closeIcon}
-            </div>
-          </div>
-          <div class="image-preview-image-container" id="imageContainer">
-            <div class="loading-overlay" id="loadingIndicator" style="display:none;"><div class="image-loading"></div></div>
-            <div class="arrow-btn left-arrow" id="prevImage">${prevIcon}</div>
-            <div class="arrow-btn right-arrow" id="nextImage">${nextIcon}</div>
-            <div class="error-message" id="errorMessage" style="display:none;">
-              图片加载失败
-            </div>
-            <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
-            <div class="corner-tools" id="cornerTools">
-              <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
-              <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
-              <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
-              <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
-              <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
-              <span class="image-preview-counter" id="imageCounter">1 / 1</span>
-            </div>
-          </div>
-          <div class="image-progress-mask" id="imageProgressMask" style="display:none;">
-            <div class="progress-ring"><svg width="32" height="32"><circle class="progress-bg" cx="16" cy="16" r="14" stroke-width="4" fill="none"/><circle class="progress-bar" cx="16" cy="16" r="14" stroke-width="4" fill="none"/></svg></div>
-            <div class="progress-info"><div id="progressText">加载中</div><div id="progressPercent">0%</div><div id="progressSize">0MB / 0MB</div></div>
+      <div style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column;">
+        <div style="position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+          <div id="previewTitle" style="color: white; font-size: 1.25rem; font-weight: 500;">图片预览</div>
+          <div id="closePreview" style="color: white; font-size: 1.5rem; cursor: pointer; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.2);">
+            ${closeIcon}
           </div>
         </div>
-        <div class="image-info-panel expanded" id="imageInfoPanel">
-          <div class="info-collapse-btn" id="infoCollapseBtn">&gt;</div>
-          <div class="info-panel-content" id="infoPanelContent"></div>
+        
+        <div style="flex: 1; position: relative; display: flex; justify-content: center; align-items: center;">
+          <div id="loadingIndicator" style="display: none; color: white; font-size: 1.2rem;">加载中...</div>
+          <div id="errorMessage" style="display: none; color: white; background: rgba(255,0,0,0.2); padding: 1rem; border-radius: 0.5rem;">图片加载失败</div>
+          <canvas id="previewCanvas" style="max-width: 100%; max-height: 100%; cursor: grab;"></canvas>
+          
+          <div id="prevImage" style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: white; font-size: 2rem; cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.5);">
+            ${prevIcon}
+          </div>
+          <div id="nextImage" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); color: white; font-size: 2rem; cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.5);">
+            ${nextIcon}
+          </div>
+        </div>
+        
+        <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px;">
+          <button id="zoomOut" style="background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; justify-content: center; align-items: center;" title="缩小">
+            ${zoomOutIcon}
+          </button>
+          <button id="resetZoom" style="background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; justify-content: center; align-items: center;" title="重置">
+            ${resetZoomIcon}
+          </button>
+          <button id="zoomIn" style="background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; justify-content: center; align-items: center;" title="放大">
+            ${zoomInIcon}
+          </button>
         </div>
       </div>
-      <div class="thumbnail-nav" id="thumbnailNav"></div>
     `;
 
-    // 3. 赋值所有内部节点
-    this.previewImage = this.previewContainer.querySelector('#previewImage') as HTMLImageElement;
+    // 获取元素引用
+    this.previewCanvas = this.previewContainer.querySelector('#previewCanvas') as HTMLCanvasElement;
     this.previewTitle = this.previewContainer.querySelector('#previewTitle')!;
     this.closeButton = this.previewContainer.querySelector('#closePreview')!;
     this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLDivElement;
@@ -125,296 +652,217 @@ export class ViewerPro {
     this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement;
     this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement;
     this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
-    this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement;
-    this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement;
-    this.imageCounter = this.previewContainer.querySelector('#imageCounter')!;
     this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
     this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
-    this.thumbnailNav = this.previewContainer.querySelector('#thumbnailNav')!;
-    this.imageContainer = this.previewContainer.querySelector('#imageContainer')!;
-    this.infoPanel = this.previewContainer.querySelector('#imageInfoPanel')! as HTMLElement;
-    this.infoCollapseBtn = this.previewContainer.querySelector('#infoCollapseBtn')! as HTMLElement;
-    this.progressMask = this.previewContainer.querySelector('#imageProgressMask')! as HTMLElement;
-    this.progressText = this.previewContainer.querySelector('#progressText')! as HTMLElement;
-    this.progressPercent = this.previewContainer.querySelector('#progressPercent')! as HTMLElement;
-    this.progressSize = this.previewContainer.querySelector('#progressSize')! as HTMLElement;
-    this.infoPanelContent = this.previewContainer.querySelector('#infoPanelContent')! as HTMLElement;
-
-    this.customLoadingNode = options.loadingNode || null;
-    this.customRenderNode = options.renderNode || null;
-    this.onImageLoad = typeof options.onImageLoad === 'function' ? options.onImageLoad : null;
 
     this.images = Array.isArray(options.images) ? options.images : [];
-    this._boundDrag = this.drag.bind(this);
-    this._boundStopDrag = this.stopDrag.bind(this);
-    this._boundTouchDrag = (e: TouchEvent) => {
-      e.preventDefault();
-      this.drag(e.touches[0]);
-    };
-    this._boundTouchEnd = this.stopDrag.bind(this);
 
     this.bindEvents();
-    if (this.images.length > 0) {
-      this.updateThumbnails();
-    }
+  }
+
+  // 添加 init 方法以保持兼容性（虽然不需要做任何事情）
+  public init() {
+    // 简化版本在构造函数中已完成所有初始化
+    // 此方法仅为保持 API 兼容性
+    console.log('ViewerPro initialized');
+    return this;
   }
 
   private bindEvents() {
     this.closeButton.addEventListener('click', () => this.close());
     this.prevButton.addEventListener('click', () => this.navigate(-1));
     this.nextButton.addEventListener('click', () => this.navigate(1));
-    this.zoomInButton.addEventListener('click', () => this.zoom(0.2));
-    this.zoomOutButton.addEventListener('click', () => this.zoom(-0.2));
-    this.resetZoomButton.addEventListener('click', () => this.resetZoom());
-    this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
-    this.downloadButton.addEventListener('click', () => this.downloadCurrentImage());
+    this.zoomInButton.addEventListener('click', () => this.webglViewer?.zoomIn(this.webglOptions.smooth));
+    this.zoomOutButton.addEventListener('click', () => this.webglViewer?.zoomOut(this.webglOptions.smooth));
+    this.resetZoomButton.addEventListener('click', () => this.webglViewer?.resetView());
+    
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    this.previewImage.addEventListener('mousedown', (e) => this.startDrag(e));
-    this.previewImage.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
-    this.previewImage.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      this.zoom(e.deltaY < 0 ? 0.1 : -0.1);
-    });
     this.previewContainer.addEventListener('click', (e) => {
       if (e.target === this.previewContainer) {
         this.close();
       }
     });
-    this.previewImage.addEventListener('dblclick', () => this.resetZoom());
-    this.infoCollapseBtn.addEventListener('click', () => this.toggleInfoPanel());
-  }
-
-  public init() {
-    document.querySelectorAll('.image-grid-item').forEach((item, index) => {
-      item.addEventListener('click', () => this.open(index));
-    });
   }
 
   public addImages(images: ImageObj[]) {
     this.images = images;
-    this.updateThumbnails();
-  }
-
-  private updateThumbnails() {
-    // 如果 thumbnailNav 还没有内容，首次渲染
-    if (this.thumbnailNav.childNodes.length !== this.images.length) {
-      this.thumbnailNav.innerHTML = '';
-      this.images.forEach((image, index) => {
-        const thumbnail = document.createElement('div');
-        thumbnail.className = `thumbnail${index === this.currentIndex ? ' active' : ''}`;
-        thumbnail.innerHTML = `<img src="${image.thumbnail || image.src}" alt="${image.title}">`;
-        thumbnail.addEventListener('click', () => this.open(index));
-        this.thumbnailNav.appendChild(thumbnail);
-      });
-    } else {
-      // 只更新 active 状态
-      Array.from(this.thumbnailNav.children).forEach((node, idx) => {
-        if (idx === this.currentIndex) {
-          node.classList.add('active');
-        } else {
-          node.classList.remove('active');
-        }
-      });
-    }
+    return this;
   }
 
   public open(index: number) {
     if (index < 0 || index >= this.images.length) return;
     this.currentIndex = index;
-    this.scale = 1;
-    this.translateX = 0;
-    this.translateY = 0;
-    this.updateThumbnails(); // 先切换缩略图高亮
     this.updatePreview();
-    this.previewContainer.classList.add('active');
+    this.previewContainer.style.display = 'flex';
+    setTimeout(() => {
+      this.previewContainer.style.opacity = '1';
+    }, 10);
     document.body.style.overflow = 'hidden';
+    return this;
   }
 
   public close() {
-    this.previewContainer.classList.remove('active');
+    this.previewContainer.style.opacity = '0';
+    setTimeout(() => {
+      this.previewContainer.style.display = 'none';
+    }, 300);
     document.body.style.overflow = '';
-    if (this.isFullscreen) {
-      this.toggleFullscreen();
+    if (this.webglViewer) {
+      this.webglViewer.destroy();
+      this.webglViewer = null;
     }
+    return this;
   }
 
-  private updatePreview() {
+  // 添加销毁方法
+  public destroy() {
+    if (this.webglViewer) {
+      this.webglViewer.destroy();
+      this.webglViewer = null;
+    }
+    
+    // 移除 DOM 元素
+    if (this.previewContainer && this.previewContainer.parentNode) {
+      this.previewContainer.parentNode.removeChild(this.previewContainer);
+    }
+    
+    // 清理数据
+    this.images = [];
+    this.currentIndex = 0;
+    
+    return this;
+  }
+
+  // 添加获取当前状态的方法
+  public getCurrentIndex(): number {
+    return this.currentIndex;
+  }
+
+  public getImagesCount(): number {
+    return this.images.length;
+  }
+
+  public getCurrentImage(): ImageObj | null {
+    return this.images[this.currentIndex] || null;
+  }
+
+  // 添加是否打开的状态检查
+  public isOpen(): boolean {
+    return this.previewContainer.style.display !== 'none';
+  }
+
+  // ...existing methods...
+
+  private async updatePreview() {
     const currentImage = this.images[this.currentIndex];
+    if (!currentImage) {
+      console.warn('No image found at index:', this.currentIndex);
+      return;
+    }
+
     this.showLoading();
     this.errorMessage.style.display = 'none';
-    this.previewImage.style.display = 'none';
+    this.previewCanvas.style.display = 'none';
     this.previewTitle.textContent = currentImage.title || '图片预览';
-    this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
-    this.showProgress(0, 0, 0);
-    const xhr = new XMLHttpRequest();
-    const thisToken = ++this.imageLoadToken;
-    xhr.open('GET', currentImage.src, true);
-    xhr.responseType = 'blob';
-    xhr.onprogress = (e) => {
-      if (thisToken !== this.imageLoadToken) return;
-      if (e.lengthComputable) {
-        this.showProgress(e.loaded / e.total, e.loaded, e.total);
+
+    try {
+      if (this.webglViewer) {
+        this.webglViewer.destroy();
       }
-    };
-    xhr.onload = () => {
-      if (thisToken !== this.imageLoadToken) return;
-      if (xhr.status === 200) {
-        const blob = xhr.response;
-        const url = URL.createObjectURL(blob);
-        this.previewImage.src = url;
-        this.previewImage.style.display = 'block';
-        this.hideProgress();
-        const oldNode = this.imageContainer.querySelector('.custom-render-node');
-        if (oldNode) oldNode.remove();
-        this.previewImage = document.getElementById('previewImage') as HTMLImageElement;
-        this.updateImageTransform();
-      } else {
-        this.hideProgress();
-        this.hideLoading();
-        this.errorMessage.style.display = 'block';
+      
+      // 先设置 Canvas 的基本尺寸
+      this.previewCanvas.style.width = '80%';
+      this.previewCanvas.style.height = '80%';
+      this.previewCanvas.style.maxWidth = '90vw';
+      this.previewCanvas.style.maxHeight = '90vh';
+      
+      // 显示 Canvas 以确保可以获取正确的尺寸
+      this.previewCanvas.style.display = 'block';
+      
+      // 等待多帧让 CSS 生效和布局完成
+      await new Promise(resolve => requestAnimationFrame(() => 
+        requestAnimationFrame(resolve)
+      ));
+      
+      // 再次检查并设置正确的尺寸
+      const rect = this.previewCanvas.getBoundingClientRect();
+      console.log('Canvas rect after CSS:', rect);
+      
+      if (rect.width === 0 || rect.height === 0) {
+        // 如果仍然为 0，手动计算尺寸
+        const container = this.previewContainer;
+        const containerRect = container.getBoundingClientRect();
+        const targetWidth = Math.min(containerRect.width * 0.8, window.innerWidth * 0.9);
+        const targetHeight = Math.min(containerRect.height * 0.8, window.innerHeight * 0.9);
+        
+        this.previewCanvas.style.width = targetWidth + 'px';
+        this.previewCanvas.style.height = targetHeight + 'px';
+        
+        console.log('Manually set canvas size:', { targetWidth, targetHeight });
+        
+        // 再等一帧
+        await new Promise(resolve => requestAnimationFrame(resolve));
       }
-      if (this.onImageLoad) {
-        this.onImageLoad(currentImage, this.currentIndex);
-      }
-      this.updateThumbnails();
-      this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
-    };
-    xhr.onerror = () => {
-      if (thisToken !== this.imageLoadToken) return;
-      this.hideProgress();
+      
+      this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
+      await this.webglViewer.loadImage(currentImage.src);
+      
+      this.hideLoading();
+      
+      console.log('Image loaded successfully:', currentImage.src);
+      
+    } catch (error) {
+      console.error('Failed to load image:', error);
       this.hideLoading();
       this.errorMessage.style.display = 'block';
-    };
-    xhr.send();
-    this.prevButton.disabled = this.currentIndex === 0;
-    this.nextButton.disabled = this.currentIndex === this.images.length - 1;
+      this.errorMessage.textContent = `图片加载失败: ${error instanceof Error ? error.message : '未知错误'}`;
+    }
+
+    this.updateNavigationButtons();
   }
 
   private showLoading() {
-    this.loadingIndicator.innerHTML = '';
-    this.loadingIndicator.style.display = 'flex';
-    if (this.customLoadingNode) {
-      if (typeof this.customLoadingNode === 'function') {
-        const node = this.customLoadingNode();
-        if (node instanceof HTMLElement) {
-          this.loadingIndicator.appendChild(node);
-        }
-      } else if (this.customLoadingNode instanceof HTMLElement) {
-        this.loadingIndicator.appendChild(this.customLoadingNode);
-      }
-    } else {
-      const div = document.createElement('div');
-      div.className = 'image-loading';
-      this.loadingIndicator.appendChild(div);
-    }
+    this.loadingIndicator.style.display = 'block';
   }
 
   private hideLoading() {
     this.loadingIndicator.style.display = 'none';
-    this.loadingIndicator.innerHTML = '';
   }
 
   private navigate(direction: number) {
     const newIndex = this.currentIndex + direction;
     if (newIndex >= 0 && newIndex < this.images.length) {
       this.currentIndex = newIndex;
-      this.resetZoom();
-      this.updateThumbnails(); // 先切换缩略图高亮
       this.updatePreview();
     }
   }
 
-  private zoom(delta: number) {
-    const newScale = Math.max(0.5, Math.min(3, this.scale + delta));
-    if (newScale !== this.scale) {
-      this.scale = newScale;
-      this.updateImageTransform();
+  private updateNavigationButtons() {
+    // 只有一张图片时隐藏导航按钮
+    if (this.images.length <= 1) {
+      this.prevButton.style.display = 'none';
+      this.nextButton.style.display = 'none';
+      return;
     }
-  }
 
-  private resetZoom() {
-    this.scale = 1;
-    this.translateX = 0;
-    this.translateY = 0;
-    this.updateImageTransform();
-  }
-
-  private updateImageTransform() {
-    this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
-  }
-
-  private startDrag(e: MouseEvent | Touch) {
-    if (this.scale <= 1) return;
-    if ('preventDefault' in e && typeof e.preventDefault === 'function') {
-      e.preventDefault();
-    }
-    this.isDragging = true;
-    this.startX = e.clientX - this.translateX;
-    this.startY = e.clientY - this.translateY;
-    this.previewImage.style.cursor = 'grabbing';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', this._boundDrag);
-    document.addEventListener('mouseup', this._boundStopDrag);
-    document.addEventListener('touchmove', this._boundTouchDrag, { passive: false });
-    document.addEventListener('touchend', this._boundTouchEnd);
-  }
-
-  private drag(e: MouseEvent | Touch) {
-    if (!this.isDragging) return;
-    if ('preventDefault' in e && typeof e.preventDefault === 'function') {
-      e.preventDefault();
-    }
-    const containerRect = this.imageContainer.getBoundingClientRect();
-    const imageRect = this.previewImage.getBoundingClientRect();
-    this.translateX = e.clientX - this.startX;
-    this.translateY = e.clientY - this.startY;
-    const maxTranslateX = (imageRect.width * this.scale - containerRect.width) / 2;
-    const maxTranslateY = (imageRect.height * this.scale - containerRect.height) / 2;
-    this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
-    this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
-    this.updateImageTransform();
-  }
-
-  private stopDrag() {
-    if (!this.isDragging) return;
-    this.isDragging = false;
-    this.previewImage.style.cursor = 'grab';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', this._boundDrag);
-    document.removeEventListener('mouseup', this._boundStopDrag);
-    document.removeEventListener('touchmove', this._boundTouchDrag as EventListener, false);
-    document.removeEventListener('touchend', this._boundTouchEnd);
-  }
-
-  // 全屏切换时切换图标
-  private toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      this.previewContainer.requestFullscreen?.().catch((err) => {
-        console.error(`全屏错误: ${err.message}`);
-      });
-      this.fullscreenButton.innerHTML = fullscreenExitIcon;
-      this.isFullscreen = true;
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-        this.fullscreenButton.innerHTML = fullscreenIcon;
-        this.isFullscreen = false;
-      }
-    }
-  }
-
-  private downloadCurrentImage() {
-    const currentImage = this.images[this.currentIndex];
-    const link = document.createElement('a');
-    link.href = currentImage.src;
-    link.download = currentImage.title || 'image';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    this.prevButton.style.display = 'flex';
+    this.nextButton.style.display = 'flex';
+    
+    this.prevButton.style.opacity = this.currentIndex === 0 ? '0.3' : '1';
+    this.nextButton.style.opacity = this.currentIndex === this.images.length - 1 ? '0.3' : '1';
+    this.prevButton.style.pointerEvents = this.currentIndex === 0 ? 'none' : 'auto';
+    this.nextButton.style.pointerEvents = this.currentIndex === this.images.length - 1 ? 'none' : 'auto';
   }
 
   private handleKeyDown(e: KeyboardEvent) {
-    if (!this.previewContainer.classList.contains('active')) return;
+    if (this.previewContainer.style.display === 'none') return;
+    
+    // 阻止默认行为
+    const preventKeys = ['Escape', 'ArrowLeft', 'ArrowRight', '+', '=', '-', '0'];
+    if (preventKeys.includes(e.key)) {
+      e.preventDefault();
+    }
+    
     switch (e.key) {
       case 'Escape':
         this.close();
@@ -427,64 +875,17 @@ export class ViewerPro {
         break;
       case '+':
       case '=':
-        this.zoom(0.2);
+        this.webglViewer?.zoomIn(this.webglOptions.smooth);
         break;
       case '-':
-        this.zoom(-0.2);
+        this.webglViewer?.zoomOut(this.webglOptions.smooth);
         break;
       case '0':
-        this.resetZoom();
-        break;
-      case 'f':
-        this.toggleFullscreen();
-        break;
-      case 'd':
-        this.downloadCurrentImage();
+        this.webglViewer?.resetView();
         break;
     }
-  }
-
-  // 新增：渲染图片信息HTML
-  private renderImageInfo(img: ImageObj): string {
-    // 这里只做简单示例，实际可根据你的图片对象结构扩展
-    let html = `<div class='info-title'>图片信息</div>`;
-    if (img.title) html += `<div><b>标题：</b>${img.title}</div>`;
-    if ((img as any).info) {
-      for (const k in (img as any).info) {
-        html += `<div><b>${k}：</b>${(img as any).info[k]}</div>`;
-      }
-    }
-    return html;
-  }
-
-  private toggleInfoPanel() {
-    if (this.infoPanel.classList.contains('expanded')) {
-      this.infoPanel.classList.remove('expanded');
-      this.infoPanel.classList.add('collapsed');
-      this.infoCollapseBtn.innerHTML = '<';
-    } else {
-      this.infoPanel.classList.remove('collapsed');
-      this.infoPanel.classList.add('expanded');
-      this.infoCollapseBtn.innerHTML = '>';
-    }
-  }
-
-  private showProgress(percent: number, loaded: number, total: number) {
-    this.progressMask.style.display = 'flex';
-    this.progressText.textContent = '加载中';
-    this.progressPercent.textContent = `${Math.round(percent * 100)}%`;
-    this.progressSize.textContent = `${(loaded / 1048576).toFixed(1)}MB / ${(total / 1048576).toFixed(1)}MB`;
-    // 进度环动画
-    const circle = this.progressMask.querySelector('.progress-bar') as SVGCircleElement;
-    const r = 14, c = 2 * Math.PI * r;
-    circle.style.strokeDasharray = `${c}`;
-    circle.style.strokeDashoffset = `${c * (1 - percent)}`;
-  }
-
-  private hideProgress() {
-    this.progressMask.style.display = 'none';
   }
 }
 
-// 导出到 window 方便浏览器直接使用
+// 导出到 window
 (window as any).ViewerPro = ViewerPro;

@@ -17,8 +17,8 @@ const images = [
     type: "live-photo",
   },
   {
-    src: "https://picsum.photos/id/1015/1200/800",
-    thumbnail: "https://picsum.photos/id/1015/400/300",
+    src: "http://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    thumbnail: "http://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
     title: "自然风景",
   },
   {
@@ -94,34 +94,35 @@ const init = async () => {
   };
   await nextTick();
   viewer.value = new ViewerPro({
-    loadingNode: customLoading,
-    renderNode: customRender,
-    onImageLoad: (imgObj, idx) => {
-      console.log("图片加载完成:", imgObj, idx);
-      if (imgObj.type !== "live-photo") return;
-      const demoSource = {
-        photoSrc: imgObj.photoSrc || "",
-        videoSrc: imgObj.videoSrc || "",
-      };
-      const container = document.getElementById(`live-photo-container-${idx}`);
-      new LivePhotoViewer({
-        photoSrc: demoSource.photoSrc,
-        videoSrc: demoSource.videoSrc,
-        container: container,
-        width: 300,
-        height: 300,
-        imageCustomization: {
-          styles: {
-            objectFit: "cover",
-            borderRadius: "8px",
-          },
-          attributes: {
-            alt: "Live Photo Demo",
-            loading: "lazy",
-          },
-        },
-      });
-    },
+    images,
+    // loadingNode: customLoading,
+    // renderNode: customRender,
+    // onImageLoad: (imgObj, idx) => {
+    //   console.log("图片加载完成:", imgObj, idx);
+    //   if (imgObj.type !== "live-photo") return;
+    //   const demoSource = {
+    //     photoSrc: imgObj.photoSrc || "",
+    //     videoSrc: imgObj.videoSrc || "",
+    //   };
+    //   const container = document.getElementById(`live-photo-container-${idx}`);
+    //   new LivePhotoViewer({
+    //     photoSrc: demoSource.photoSrc,
+    //     videoSrc: demoSource.videoSrc,
+    //     container: container,
+    //     width: 300,
+    //     height: 300,
+    //     imageCustomization: {
+    //       styles: {
+    //         objectFit: "cover",
+    //         borderRadius: "8px",
+    //       },
+    //       attributes: {
+    //         alt: "Live Photo Demo",
+    //         loading: "lazy",
+    //       },
+    //     },
+    //   });
+    // },
   });
   viewer.value.addImages(images);
   viewer.value.init();
@@ -129,10 +130,10 @@ const init = async () => {
 
 // 点击图片打开预览
 function openPreview(idx: number) {
-  // if (viewer.value) {
-  //   console.log('🍧-----viewer.value-----', viewer.value);
-  //   viewer.value?.show(idx);
-  // }
+  if (viewer.value) {
+    console.log('🍧-----viewer.value-----', viewer.value);
+    viewer.value?.open(idx);
+  }
 }
 </script>
 
