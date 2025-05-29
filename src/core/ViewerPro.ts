@@ -29,8 +29,8 @@ export class ViewerPro {
   private previewImage: HTMLImageElement;
   private previewTitle: HTMLElement;
   private closeButton: HTMLElement;
-  private prevButton: HTMLButtonElement;
-  private nextButton: HTMLButtonElement;
+  private prevButton: HTMLDivElement;
+  private nextButton: HTMLDivElement;
   private zoomInButton: HTMLButtonElement;
   private zoomOutButton: HTMLButtonElement;
   private resetZoomButton: HTMLButtonElement;
@@ -44,6 +44,13 @@ export class ViewerPro {
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
   private customRenderNode: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement) | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
+  private infoPanel: HTMLElement;
+  private infoCollapseBtn: HTMLElement;
+  private progressMask: HTMLElement;
+  private progressText: HTMLElement;
+  private progressPercent: HTMLElement;
+  private progressSize: HTMLElement;
+  private infoPanelContent: HTMLElement;
 
   private images: ImageObj[] = [];
   private currentIndex = 0;
@@ -72,39 +79,49 @@ export class ViewerPro {
     this.previewContainer.innerHTML = `
       <div class="image-preview-overlay"></div>
       <div class="image-preview-content">
-        <div class="image-preview-header">
-          <div class="image-preview-title" id="previewTitle">图片预览</div>
-          <div class="image-preview-close" id="closePreview" style="cursor:pointer;">
-            ${closeIcon}
+        <div class="image-preview-main-area">
+          <div class="image-preview-header">
+            <div class="image-preview-title" id="previewTitle">图片预览</div>
+            <div class="image-preview-close" id="closePreview" style="cursor:pointer;">
+              ${closeIcon}
+            </div>
+          </div>
+          <div class="image-preview-image-container" id="imageContainer">
+            <div class="loading-overlay" id="loadingIndicator" style="display:none;"><div class="image-loading"></div></div>
+            <div class="arrow-btn left-arrow" id="prevImage">${prevIcon}</div>
+            <div class="arrow-btn right-arrow" id="nextImage">${nextIcon}</div>
+            <div class="error-message" id="errorMessage" style="display:none;">
+              图片加载失败
+            </div>
+            <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
+            <div class="corner-tools" id="cornerTools">
+              <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
+              <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
+              <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
+              <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
+              <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
+              <span class="image-preview-counter" id="imageCounter">1 / 1</span>
+            </div>
+          </div>
+          <div class="image-progress-mask" id="imageProgressMask" style="display:none;">
+            <div class="progress-ring"><svg width="32" height="32"><circle class="progress-bg" cx="16" cy="16" r="14" stroke-width="4" fill="none"/><circle class="progress-bar" cx="16" cy="16" r="14" stroke-width="4" fill="none"/></svg></div>
+            <div class="progress-info"><div id="progressText">加载中</div><div id="progressPercent">0%</div><div id="progressSize">0MB / 0MB</div></div>
           </div>
         </div>
-        <div class="image-preview-image-container" id="imageContainer">
-          <div class="loading-overlay" id="loadingIndicator" style="display:none;"><div class="image-loading"></div></div>
-          <div class="error-message" id="errorMessage" style="display:none;">
-            图片加载失败
-          </div>
-          <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
-        </div>
-        <div class="thumbnail-nav" id="thumbnailNav"></div>
-        <div class="image-preview-controls">
-          <button class="control-button" id="prevImage" title="上一张">${prevIcon}</button>
-          <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
-          <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
-          <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
-          <span class="image-preview-counter" id="imageCounter">1 / 1</span>
-          <button class="control-button" id="nextImage" title="下一张">${nextIcon}</button>
-          <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
-          <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
+        <div class="image-info-panel expanded" id="imageInfoPanel">
+          <div class="info-collapse-btn" id="infoCollapseBtn">&gt;</div>
+          <div class="info-panel-content" id="infoPanelContent"></div>
         </div>
       </div>
+      <div class="thumbnail-nav" id="thumbnailNav"></div>
     `;
 
     // 3. 赋值所有内部节点
     this.previewImage = this.previewContainer.querySelector('#previewImage') as HTMLImageElement;
     this.previewTitle = this.previewContainer.querySelector('#previewTitle')!;
     this.closeButton = this.previewContainer.querySelector('#closePreview')!;
-    this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLButtonElement;
-    this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLButtonElement;
+    this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLDivElement;
+    this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLDivElement;
     this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement;
     this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement;
     this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
@@ -115,6 +132,13 @@ export class ViewerPro {
     this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
     this.thumbnailNav = this.previewContainer.querySelector('#thumbnailNav')!;
     this.imageContainer = this.previewContainer.querySelector('#imageContainer')!;
+    this.infoPanel = this.previewContainer.querySelector('#imageInfoPanel')! as HTMLElement;
+    this.infoCollapseBtn = this.previewContainer.querySelector('#infoCollapseBtn')! as HTMLElement;
+    this.progressMask = this.previewContainer.querySelector('#imageProgressMask')! as HTMLElement;
+    this.progressText = this.previewContainer.querySelector('#progressText')! as HTMLElement;
+    this.progressPercent = this.previewContainer.querySelector('#progressPercent')! as HTMLElement;
+    this.progressSize = this.previewContainer.querySelector('#progressSize')! as HTMLElement;
+    this.infoPanelContent = this.previewContainer.querySelector('#infoPanelContent')! as HTMLElement;
 
     this.customLoadingNode = options.loadingNode || null;
     this.customRenderNode = options.renderNode || null;
@@ -157,6 +181,7 @@ export class ViewerPro {
       }
     });
     this.previewImage.addEventListener('dblclick', () => this.resetZoom());
+    this.infoCollapseBtn.addEventListener('click', () => this.toggleInfoPanel());
   }
 
   public init() {
@@ -220,65 +245,47 @@ export class ViewerPro {
     this.previewImage.style.display = 'none';
     this.previewTitle.textContent = currentImage.title || '图片预览';
     this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
-
-    const img = new Image();
-    const thisToken = ++this.imageLoadToken; // 记录本次加载的token
-
-    img.onload = () => {
-      // 只处理最后一次请求的图片
+    this.showProgress(0, 0, 0);
+    const xhr = new XMLHttpRequest();
+    const thisToken = ++this.imageLoadToken;
+    xhr.open('GET', currentImage.src, true);
+    xhr.responseType = 'blob';
+    xhr.onprogress = (e) => {
       if (thisToken !== this.imageLoadToken) return;
-
-      this.hideLoading();
-      if (this.customRenderNode) {
-        this.previewImage.style.display = 'none';
-        const oldNode = this.imageContainer.querySelector('.custom-render-node');
-        if (oldNode) oldNode.remove();
-        let node: HTMLElement;
-        if (typeof this.customRenderNode === 'function') {
-          node = this.customRenderNode(currentImage, this.currentIndex);
-        } else {
-          node = this.customRenderNode;
-        }
-        if (node instanceof HTMLElement) {
-          node.classList.add('custom-render-node');
-          this.imageContainer.appendChild(node);
-          const customImg = node.tagName === 'IMG' ? node : node.querySelector('img');
-          if (customImg) {
-            (customImg as any).onmousedown = null;
-            (customImg as any).ontouchstart = null;
-            (customImg as any).onwheel = null;
-            (customImg as any).ondblclick = null;
-            customImg.addEventListener('mousedown', (e: MouseEvent) => this.startDrag(e));
-            customImg.addEventListener('touchstart', (e: TouchEvent) => this.startDrag(e.touches[0]));
-            customImg.addEventListener('wheel', (e: WheelEvent) => {
-              e.preventDefault();
-              this.zoom(e.deltaY < 0 ? 0.1 : -0.1);
-            });
-            customImg.addEventListener('dblclick', () => this.resetZoom());
-            (customImg as HTMLElement).style.cursor = 'grab';
-            this.previewImage = customImg as HTMLImageElement;
-            this.updateImageTransform();
-          }
-        }
-      } else {
-        this.previewImage.src = currentImage.src;
+      if (e.lengthComputable) {
+        this.showProgress(e.loaded / e.total, e.loaded, e.total);
+      }
+    };
+    xhr.onload = () => {
+      if (thisToken !== this.imageLoadToken) return;
+      if (xhr.status === 200) {
+        const blob = xhr.response;
+        const url = URL.createObjectURL(blob);
+        this.previewImage.src = url;
         this.previewImage.style.display = 'block';
+        this.hideProgress();
         const oldNode = this.imageContainer.querySelector('.custom-render-node');
         if (oldNode) oldNode.remove();
         this.previewImage = document.getElementById('previewImage') as HTMLImageElement;
         this.updateImageTransform();
+      } else {
+        this.hideProgress();
+        this.hideLoading();
+        this.errorMessage.style.display = 'block';
       }
       if (this.onImageLoad) {
         this.onImageLoad(currentImage, this.currentIndex);
       }
       this.updateThumbnails();
+      this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
     };
-    img.onerror = () => {
+    xhr.onerror = () => {
       if (thisToken !== this.imageLoadToken) return;
+      this.hideProgress();
       this.hideLoading();
       this.errorMessage.style.display = 'block';
     };
-    img.src = currentImage.src;
+    xhr.send();
     this.prevButton.disabled = this.currentIndex === 0;
     this.nextButton.disabled = this.currentIndex === this.images.length - 1;
   }
@@ -435,6 +442,47 @@ export class ViewerPro {
         this.downloadCurrentImage();
         break;
     }
+  }
+
+  // 新增：渲染图片信息HTML
+  private renderImageInfo(img: ImageObj): string {
+    // 这里只做简单示例，实际可根据你的图片对象结构扩展
+    let html = `<div class='info-title'>图片信息</div>`;
+    if (img.title) html += `<div><b>标题：</b>${img.title}</div>`;
+    if ((img as any).info) {
+      for (const k in (img as any).info) {
+        html += `<div><b>${k}：</b>${(img as any).info[k]}</div>`;
+      }
+    }
+    return html;
+  }
+
+  private toggleInfoPanel() {
+    if (this.infoPanel.classList.contains('expanded')) {
+      this.infoPanel.classList.remove('expanded');
+      this.infoPanel.classList.add('collapsed');
+      this.infoCollapseBtn.innerHTML = '<';
+    } else {
+      this.infoPanel.classList.remove('collapsed');
+      this.infoPanel.classList.add('expanded');
+      this.infoCollapseBtn.innerHTML = '>';
+    }
+  }
+
+  private showProgress(percent: number, loaded: number, total: number) {
+    this.progressMask.style.display = 'flex';
+    this.progressText.textContent = '加载中';
+    this.progressPercent.textContent = `${Math.round(percent * 100)}%`;
+    this.progressSize.textContent = `${(loaded / 1048576).toFixed(1)}MB / ${(total / 1048576).toFixed(1)}MB`;
+    // 进度环动画
+    const circle = this.progressMask.querySelector('.progress-bar') as SVGCircleElement;
+    const r = 14, c = 2 * Math.PI * r;
+    circle.style.strokeDasharray = `${c}`;
+    circle.style.strokeDashoffset = `${c * (1 - percent)}`;
+  }
+
+  private hideProgress() {
+    this.progressMask.style.display = 'none';
   }
 }
 
