@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { LivePhotoViewer } from "live-photo";
 import { ref, onMounted, nextTick } from "vue";
-import { ViewerPro } from "../../src/index";
+import { ViewerPro, type ImageObj } from "../../src/index";
 import "../../src/core/ViewerPro.css";
 
 // 示例图片数据
-const images = [
-  {
-    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
-    thumbnail: "https://picsum.photos/id/1015/400/300",
-    photoSrc:
-      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
-    videoSrc:
-      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160657.MOV",
-    title: "自然风景",
-    type: "live-photo",
-  },
+const images: ImageObj[] = [
   {
     src: "https://picsum.photos/id/1015/1200/800",
     thumbnail: "https://picsum.photos/id/1015/400/300",
@@ -48,11 +37,12 @@ const images = [
   },
 ];
 
-const viewer = ref<any>(null);
+const viewer = ref<ViewerPro | null>(null);
 
 onMounted(() => {
   init();
 });
+
 const init = async () => {
   // 1. 自定义 loading 节点
   const customLoading = document.createElement("div");
@@ -63,64 +53,33 @@ const init = async () => {
               <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
             </circle>
           </svg>
-          <span>图片加载中11111，请稍候...</span>
+          <span>图片加载中，请稍候...</span>
         </div>
       `;
 
   // 2. 自定义渲染节点
-  const customRender = (imgObj, idx) => {
+  const customRender = (imgObj: ImageObj, _idx: number) => {
     const box = document.createElement("div");
     box.style.display = "flex";
     box.style.flexDirection = "column";
     box.style.alignItems = "center";
     box.style.justifyContent = "center";
     box.style.height = "100%";
-    if (imgObj.type === "live-photo") {
-      box.innerHTML = `
-        <div id="live-photo-container-${idx}"></div>
-         `;
-    } else {
-      box.innerHTML = `
-          <img src="${
-            imgObj.src
-          }" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
-          <div style="color:#fff;margin-top:8px;">自定义渲染：${
-            imgObj.title || ""
-          }</div>
-        `;
-    }
+    
+    box.innerHTML = `
+      <img src="${imgObj.src}" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
+      <div style="color:#fff;margin-top:8px;">自定义渲染：${imgObj.title || ""}</div>
+    `;
 
     return box;
   };
+  
   await nextTick();
   viewer.value = new ViewerPro({
     loadingNode: customLoading,
     renderNode: customRender,
-    onImageLoad: (imgObj, idx) => {
+    onImageLoad: (imgObj: ImageObj, idx: number) => {
       console.log("图片加载完成:", imgObj, idx);
-      if (imgObj.type !== "live-photo") return;
-      const demoSource = {
-        photoSrc: imgObj.photoSrc || "",
-        videoSrc: imgObj.videoSrc || "",
-      };
-      const container = document.getElementById(`live-photo-container-${idx}`);
-      new LivePhotoViewer({
-        photoSrc: demoSource.photoSrc,
-        videoSrc: demoSource.videoSrc,
-        container: container,
-        width: 300,
-        height: 300,
-        imageCustomization: {
-          styles: {
-            objectFit: "cover",
-            borderRadius: "8px",
-          },
-          attributes: {
-            alt: "Live Photo Demo",
-            loading: "lazy",
-          },
-        },
-      });
     },
   });
   viewer.value.addImages(images);
@@ -129,10 +88,7 @@ const init = async () => {
 
 // 点击图片打开预览
 function openPreview(idx: number) {
-  // if (viewer.value) {
-  //   console.log('🍧-----viewer.value-----', viewer.value);
-  //   viewer.value?.show(idx);
-  // }
+  viewer.value?.open(idx);
 }
 </script>
 
