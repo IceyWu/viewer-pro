@@ -9,6 +9,7 @@
   display: none;
   opacity: 0;
   transition: opacity 0.3s ease;
+  will-change: opacity;
 }
 .image-preview-container.active {
   display: flex;
@@ -26,6 +27,7 @@
   height: 100%;
   background-color: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(8px);
+  will-change: backdrop-filter;
 }
 .image-preview-content {
   position: relative;
@@ -143,6 +145,8 @@
   object-fit: contain;
   transition: transform 0.3s ease;
   cursor: grab;
+  will-change: transform;
+  transform-origin: center;
 }
 .image-preview-image:active {
   cursor: grabbing;
@@ -340,6 +344,7 @@
   height: 48px;
   background: rgba(30,40,60,0.65);
   color: #fff;
+  border: none;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -348,11 +353,18 @@
   z-index: 21;
   font-size: 2rem;
   box-shadow: 0 2px 8px 0 rgba(0,0,0,0.18);
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.2s;
   user-select: none;
+  will-change: background, transform;
 }
 .arrow-btn:hover {
   background: rgba(30,40,60,0.85);
+  transform: translateY(-50%) scale(1.05);
+}
+.arrow-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: translateY(-50%);
 }
 .left-arrow {
   left: 24px;
