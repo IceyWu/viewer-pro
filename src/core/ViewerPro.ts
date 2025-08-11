@@ -24,6 +24,19 @@ export interface ViewerProOptions {
   };
 }
 
+// 常量定义
+const DEFAULT_CONFIG = {
+  initialScale: 1,
+  minScale: 0.1,
+  maxScale: 10,
+  smooth: true,
+  limitToBounds: true,
+} as const;
+
+const ANIMATION_DURATION = 300;
+const ZOOM_FACTOR = 1.2;
+const DEFAULT_CANVAS_SIZE = { width: 800, height: 600 };
+
 // WebGL Image Viewer 引擎
 class WebGLImageViewerEngine {
   private canvas: HTMLCanvasElement;
@@ -48,9 +61,10 @@ class WebGLImageViewerEngine {
   private lastTouchDistance = 0;
 
   // Animation state
+  private animationFrame: number | null = null;
   private isAnimating = false;
   private animationStartTime = 0;
-  private animationDuration = 300;
+  private readonly animationDuration = ANIMATION_DURATION;
   private startScale = 1;
   private targetScale = 1;
   private startTranslateX = 0;
@@ -61,19 +75,19 @@ class WebGLImageViewerEngine {
   // Configuration
   private config: Required<NonNullable<ViewerProOptions['webglOptions']>>;
 
-  // Bound event handlers
-  private boundHandleMouseDown: (e: MouseEvent) => void;
-  private boundHandleMouseMove: (e: MouseEvent) => void;
-  private boundHandleMouseUp: () => void;
-  private boundHandleWheel: (e: WheelEvent) => void;
-  private boundHandleDoubleClick: (e: MouseEvent) => void;
-  private boundHandleTouchStart: (e: TouchEvent) => void;
-  private boundHandleTouchMove: (e: TouchEvent) => void;
-  private boundHandleTouchEnd: (e: TouchEvent) => void;
-  private boundResizeCanvas: () => void;
+  // Bound event handlers (使用箭头函数避免bind调用)
+  private handleMouseDown = (e: MouseEvent) => this._handleMouseDown(e);
+  private handleMouseMove = (e: MouseEvent) => this._handleMouseMove(e);
+  private handleMouseUp = () => this._handleMouseUp();
+  private handleWheel = (e: WheelEvent) => this._handleWheel(e);
+  private handleDoubleClick = (e: MouseEvent) => this._handleDoubleClick(e);
+  private handleTouchStart = (e: TouchEvent) => this._handleTouchStart(e);
+  private handleTouchMove = (e: TouchEvent) => this._handleTouchMove(e);
+  private handleTouchEnd = (e: TouchEvent) => this._handleTouchEnd(e);
+  private handleResize = () => this.resizeCanvas();
 
-  // Shaders
-  private vertexShaderSource = `
+  // Shaders (移到类外部作为静态常量)
+  private static readonly VERTEX_SHADER_SOURCE = `
     attribute vec2 a_position;
     attribute vec2 a_texCoord;
     uniform mat3 u_matrix;
@@ -86,7 +100,7 @@ class WebGLImageViewerEngine {
     }
   `;
 
-  private fragmentShaderSource = `
+  private static readonly FRAGMENT_SHADER_SOURCE = `
     precision mediump float;
     uniform sampler2D u_image;
     varying vec2 v_texCoord;
@@ -98,65 +112,42 @@ class WebGLImageViewerEngine {
 
   constructor(canvas: HTMLCanvasElement, config: NonNullable<ViewerProOptions['webglOptions']> = {}) {
     this.canvas = canvas;
-    this.config = {
-      initialScale: 1,
-      minScale: 0.1,
-      maxScale: 10,
-      smooth: true,
-      limitToBounds: true,
-      ...config,
-    };
+    this.config = { ...DEFAULT_CONFIG, ...config };
 
-    const gl = canvas.getContext('webgl');
-    if (!gl) {
-      throw new Error('WebGL not supported');
-    }
+    const gl = this.getWebGLContext();
     this.gl = gl;
 
-    // Bind event handlers
-    this.boundHandleMouseDown = (e: MouseEvent) => this.handleMouseDown(e);
-    this.boundHandleMouseMove = (e: MouseEvent) => this.handleMouseMove(e);
-    this.boundHandleMouseUp = () => this.handleMouseUp();
-    this.boundHandleWheel = (e: WheelEvent) => this.handleWheel(e);
-    this.boundHandleDoubleClick = (e: MouseEvent) => this.handleDoubleClick(e);
-    this.boundHandleTouchStart = (e: TouchEvent) => this.handleTouchStart(e);
-    this.boundHandleTouchMove = (e: TouchEvent) => this.handleTouchMove(e);
-    this.boundHandleTouchEnd = (e: TouchEvent) => this.handleTouchEnd(e);
-    this.boundResizeCanvas = () => this.resizeCanvas();
-
+    this.validateCanvas();
     this.setupCanvas();
     this.initWebGL();
     this.setupEventListeners();
   }
 
-  private setupCanvas() {
-    this.resizeCanvas();
-    window.addEventListener('resize', this.boundResizeCanvas);
+  private getWebGLContext(): WebGLRenderingContext {
+    const gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
+    if (!gl) {
+      throw new Error('WebGL not supported in this browser');
+    }
+    return gl as WebGLRenderingContext;
   }
 
-  private resizeCanvas() {
+  private validateCanvas(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      throw new Error(`Canvas has invalid size: ${rect.width}x${rect.height}`);
+    }
+  }
+
+  private setupCanvas(): void {
+    this.resizeCanvas();
+    window.addEventListener('resize', this.handleResize, { passive: true });
+  }
+
+  private resizeCanvas(): void {
     const rect = this.canvas.getBoundingClientRect();
     
-    // 如果 getBoundingClientRect 返回的尺寸为 0，使用父容器或默认尺寸
-    let width = rect.width;
-    let height = rect.height;
-    
-    if (width === 0 || height === 0) {
-      // 尝试从父容器获取尺寸
-      const parent = this.canvas.parentElement;
-      if (parent) {
-        const parentRect = parent.getBoundingClientRect();
-        width = parentRect.width || 800; // 默认宽度
-        height = parentRect.height || 600; // 默认高度
-      } else {
-        width = 800;
-        height = 600;
-      }
-      
-      // 强制设置 Canvas 的 CSS 尺寸
-      this.canvas.style.width = width + 'px';
-      this.canvas.style.height = height + 'px';
-    }
+    // 获取有效尺寸
+    const { width, height } = this.getValidCanvasSize(rect);
     
     this.canvasWidth = width;
     this.canvasHeight = height;
@@ -168,8 +159,6 @@ class WebGLImageViewerEngine {
     
     // 设置 WebGL 视口
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    
-    console.log('Canvas resized to:', { width, height, devicePixelRatio });
 
     if (this.imageLoaded) {
       this.fitImageToScreen();
@@ -177,83 +166,166 @@ class WebGLImageViewerEngine {
     }
   }
 
-  private initWebGL() {
+  private getValidCanvasSize(rect: DOMRect): { width: number; height: number } {
+    let { width, height } = rect;
+    
+    if (width === 0 || height === 0) {
+      // 尝试从父容器获取尺寸
+      const parent = this.canvas.parentElement;
+      if (parent) {
+        const parentRect = parent.getBoundingClientRect();
+        width = parentRect.width || DEFAULT_CANVAS_SIZE.width;
+        height = parentRect.height || DEFAULT_CANVAS_SIZE.height;
+      } else {
+        width = DEFAULT_CANVAS_SIZE.width;
+        height = DEFAULT_CANVAS_SIZE.height;
+      }
+      
+      // 强制设置 Canvas 的 CSS 尺寸
+      this.canvas.style.width = `${width}px`;
+      this.canvas.style.height = `${height}px`;
+    }
+    
+    return { width, height };
+  }
+
+  private initWebGL(): void {
     const { gl } = this;
-    const vertexShader = this.createShader(gl.VERTEX_SHADER, this.vertexShaderSource);
-    const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource);
+    
+    try {
+      const vertexShader = this.createShader(gl.VERTEX_SHADER, WebGLImageViewerEngine.VERTEX_SHADER_SOURCE);
+      const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, WebGLImageViewerEngine.FRAGMENT_SHADER_SOURCE);
 
-    this.program = gl.createProgram()!;
-    gl.attachShader(this.program, vertexShader);
-    gl.attachShader(this.program, fragmentShader);
-    gl.linkProgram(this.program);
+      this.program = this.createProgram(vertexShader, fragmentShader);
+      this.setupWebGLState();
+      this.createGeometry();
+    } catch (error) {
+      throw new Error(`WebGL initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 
-    if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
-      throw new Error(`WebGL program link error: ${gl.getProgramInfoLog(this.program)}`);
+  private createProgram(vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram {
+    const { gl } = this;
+    const program = gl.createProgram();
+    if (!program) {
+      throw new Error('Failed to create WebGL program');
     }
 
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const error = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      throw new Error(`Program link error: ${error}`);
+    }
+
+    return program;
+  }
+
+  private setupWebGLState(): void {
+    const { gl } = this;
     gl.useProgram(this.program);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  }
 
-    // Create geometry
+  private createGeometry(): void {
+    const { gl } = this;
+    
+    // 预定义几何数据
     const positions = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
     const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]);
 
-    // Position buffer
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-    const positionLocation = gl.getAttribLocation(this.program, 'a_position');
-    gl.enableVertexAttribArray(positionLocation);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+    this.createBuffer(positions, 'a_position', 2);
+    this.createBuffer(texCoords, 'a_texCoord', 2);
+  }
 
-    // Texture coordinate buffer
-    const texCoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-    const texCoordLocation = gl.getAttribLocation(this.program, 'a_texCoord');
-    gl.enableVertexAttribArray(texCoordLocation);
-    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+  private createBuffer(data: Float32Array, attributeName: string, size: number): void {
+    const { gl } = this;
+    const buffer = gl.createBuffer();
+    if (!buffer) {
+      throw new Error(`Failed to create buffer for ${attributeName}`);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    
+    const location = gl.getAttribLocation(this.program, attributeName);
+    if (location === -1) {
+      throw new Error(`Attribute ${attributeName} not found in shader`);
+    }
+    
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
   }
 
   private createShader(type: number, source: string): WebGLShader {
     const { gl } = this;
-    const shader = gl.createShader(type)!;
+    const shader = gl.createShader(type);
+    if (!shader) {
+      throw new Error('Failed to create shader');
+    }
+
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
 
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      throw new Error(`Shader compile error: ${gl.getShaderInfoLog(shader)}`);
+      const error = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new Error(`Shader compile error: ${error}`);
     }
     return shader;
   }
 
   async loadImage(url: string): Promise<void> {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
+    const image = await this.loadImageElement(url);
+    this.imageWidth = image.width;
+    this.imageHeight = image.height;
+    this.createTexture(image);
+    this.imageLoaded = true;
+    this.fitImageToScreen();
+    this.render();
+  }
 
-    return new Promise<void>((resolve, reject) => {
-      image.onload = () => {
-        this.imageWidth = image.width;
-        this.imageHeight = image.height;
-        this.createTexture(image);
-        this.imageLoaded = true;
-        this.fitImageToScreen();
-        this.render();
-        resolve();
+  private loadImageElement(url: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      
+      const cleanup = () => {
+        image.onload = null;
+        image.onerror = null;
       };
-      image.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+
+      image.onload = () => {
+        cleanup();
+        resolve(image);
+      };
+      
+      image.onerror = () => {
+        cleanup();
+        reject(new Error(`Failed to load image: ${url}`));
+      };
+      
       image.src = url;
     });
   }
 
-  private createTexture(image: HTMLImageElement) {
+  private createTexture(image: HTMLImageElement): void {
     const { gl } = this;
+    
+    // 清理旧纹理
     if (this.texture) {
       gl.deleteTexture(this.texture);
     }
 
     this.texture = gl.createTexture();
+    if (!this.texture) {
+      throw new Error('Failed to create texture');
+    }
+
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -263,7 +335,7 @@ class WebGLImageViewerEngine {
   }
 
   private createMatrix(): Float32Array {
-    // 修正矩阵计算，考虑设备像素比
+    // 优化矩阵计算
     const devicePixelRatio = window.devicePixelRatio || 1;
     const canvasWidth = this.canvas.width / devicePixelRatio;
     const canvasHeight = this.canvas.height / devicePixelRatio;
@@ -280,7 +352,7 @@ class WebGLImageViewerEngine {
     ]);
   }
 
-  private fitImageToScreen() {
+  private fitImageToScreen(): void {
     const scaleX = this.canvasWidth / this.imageWidth;
     const scaleY = this.canvasHeight / this.imageHeight;
     const fitToScreenScale = Math.min(scaleX, scaleY);
@@ -293,7 +365,10 @@ class WebGLImageViewerEngine {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
-  private startAnimation(targetScale: number, targetTranslateX: number, targetTranslateY: number) {
+  private startAnimation(targetScale: number, targetTranslateX: number, targetTranslateY: number): void {
+    // 停止当前动画
+    this.stopAnimation();
+    
     this.isAnimating = true;
     this.animationStartTime = performance.now();
     this.startScale = this.scale;
@@ -305,7 +380,15 @@ class WebGLImageViewerEngine {
     this.animate();
   }
 
-  private animate() {
+  private stopAnimation(): void {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    this.isAnimating = false;
+  }
+
+  private animate(): void {
     if (!this.isAnimating) return;
 
     const now = performance.now();
@@ -320,9 +403,9 @@ class WebGLImageViewerEngine {
     this.render();
 
     if (progress < 1) {
-      requestAnimationFrame(() => this.animate());
+      this.animationFrame = requestAnimationFrame(() => this.animate());
     } else {
-      this.isAnimating = false;
+      this.stopAnimation();
     }
   }
 
@@ -332,10 +415,7 @@ class WebGLImageViewerEngine {
     return Math.min(scaleX, scaleY);
   }
 
-
-
-
-  private constrainImagePosition() {
+  private constrainImagePosition(): void {
     if (!this.config.limitToBounds) return;
 
     const fitScale = this.getFitToScreenScale();
@@ -354,7 +434,7 @@ class WebGLImageViewerEngine {
     this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
   }
 
-  private render() {
+  private render(): void {
     const { gl } = this;
     
     // 清除画布
@@ -363,7 +443,6 @@ class WebGLImageViewerEngine {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     if (!this.texture || !this.imageLoaded) {
-      console.log('No texture or image not loaded');
       return;
     }
 
@@ -382,38 +461,44 @@ class WebGLImageViewerEngine {
     
     // 绘制
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  private setupEventListeners(): void {
+    const options = { passive: false };
+    this.canvas.addEventListener('mousedown', this.handleMouseDown);
+    this.canvas.addEventListener('wheel', this.handleWheel, options);
+    this.canvas.addEventListener('dblclick', this.handleDoubleClick);
+    this.canvas.addEventListener('touchstart', this.handleTouchStart, options);
+  }
+
+  private removeEventListeners(): void {
+    this.canvas.removeEventListener('mousedown', this.handleMouseDown);
+    this.canvas.removeEventListener('wheel', this.handleWheel);
+    this.canvas.removeEventListener('dblclick', this.handleDoubleClick);
+    this.canvas.removeEventListener('touchstart', this.handleTouchStart);
+    window.removeEventListener('resize', this.handleResize);
     
-    console.log('Rendered frame with scale:', this.scale, 'translate:', this.translateX, this.translateY);
+    // 清理document级别的事件监听器
+    document.removeEventListener('mousemove', this.handleMouseMove);
+    document.removeEventListener('mouseup', this.handleMouseUp);
+    document.removeEventListener('touchmove', this.handleTouchMove);
+    document.removeEventListener('touchend', this.handleTouchEnd);
   }
 
-  private setupEventListeners() {
-    this.canvas.addEventListener('mousedown', this.boundHandleMouseDown);
-    this.canvas.addEventListener('wheel', this.boundHandleWheel);
-    this.canvas.addEventListener('dblclick', this.boundHandleDoubleClick);
-    this.canvas.addEventListener('touchstart', this.boundHandleTouchStart);
-  }
-
-  private removeEventListeners() {
-    this.canvas.removeEventListener('mousedown', this.boundHandleMouseDown);
-    this.canvas.removeEventListener('wheel', this.boundHandleWheel);
-    this.canvas.removeEventListener('dblclick', this.boundHandleDoubleClick);
-    this.canvas.removeEventListener('touchstart', this.boundHandleTouchStart);
-    window.removeEventListener('resize', this.boundResizeCanvas);
-  }
-
-  private handleMouseDown(e: MouseEvent) {
+  private _handleMouseDown(e: MouseEvent): void {
     e.preventDefault();
     this.isDragging = true;
     this.lastMouseX = e.clientX;
     this.lastMouseY = e.clientY;
-    document.addEventListener('mousemove', this.boundHandleMouseMove);
-    document.addEventListener('mouseup', this.boundHandleMouseUp);
+    document.addEventListener('mousemove', this.handleMouseMove);
+    document.addEventListener('mouseup', this.handleMouseUp);
     this.canvas.style.cursor = 'grabbing';
   }
 
-  private handleMouseMove(e: MouseEvent) {
+  private _handleMouseMove(e: MouseEvent): void {
     if (!this.isDragging) return;
     e.preventDefault();
+    
     const deltaX = e.clientX - this.lastMouseX;
     const deltaY = e.clientY - this.lastMouseY;
     this.translateX += deltaX;
@@ -424,23 +509,23 @@ class WebGLImageViewerEngine {
     this.lastMouseY = e.clientY;
   }
 
-  private handleMouseUp() {
+  private _handleMouseUp(): void {
     this.isDragging = false;
     this.canvas.style.cursor = 'grab';
-    document.removeEventListener('mousemove', this.boundHandleMouseMove);
-    document.removeEventListener('mouseup', this.boundHandleMouseUp);
+    document.removeEventListener('mousemove', this.handleMouseMove);
+    document.removeEventListener('mouseup', this.handleMouseUp);
   }
 
-  private handleWheel(e: WheelEvent) {
+  private _handleWheel(e: WheelEvent): void {
     e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const scaleFactor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
     this.zoomAt(x, y, scaleFactor);
   }
 
-  private handleDoubleClick(e: MouseEvent) {
+  private _handleDoubleClick(e: MouseEvent): void {
     e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -454,14 +539,14 @@ class WebGLImageViewerEngine {
     }
   }
 
-  private handleTouchStart(e: TouchEvent) {
+  private _handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
     if (e.touches.length === 1) {
       this.isDragging = true;
       this.lastMouseX = e.touches[0].clientX;
       this.lastMouseY = e.touches[0].clientY;
-      document.addEventListener('touchmove', this.boundHandleTouchMove);
-      document.addEventListener('touchend', this.boundHandleTouchEnd);
+      document.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+      document.addEventListener('touchend', this.handleTouchEnd);
     } else if (e.touches.length === 2) {
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
@@ -472,7 +557,7 @@ class WebGLImageViewerEngine {
     }
   }
 
-  private handleTouchMove(e: TouchEvent) {
+  private _handleTouchMove(e: TouchEvent): void {
     e.preventDefault();
     if (e.touches.length === 1 && this.isDragging) {
       const touch = e.touches[0];
@@ -503,14 +588,14 @@ class WebGLImageViewerEngine {
     }
   }
 
-  private handleTouchEnd(e: TouchEvent) {
+  private _handleTouchEnd(e: TouchEvent): void {
     this.isDragging = false;
     this.lastTouchDistance = 0;
-    document.removeEventListener('touchmove', this.boundHandleTouchMove);
-    document.removeEventListener('touchend', this.boundHandleTouchEnd);
+    document.removeEventListener('touchmove', this.handleTouchMove);
+    document.removeEventListener('touchend', this.handleTouchEnd);
   }
 
-  private zoomAt(x: number, y: number, scaleFactor: number, animated = false) {
+  private zoomAt(x: number, y: number, scaleFactor: number, animated = false): void {
     const oldScale = this.scale;
     const fitScale = this.getFitToScreenScale();
     const newScale = Math.max(
@@ -535,19 +620,19 @@ class WebGLImageViewerEngine {
     }
   }
 
-  public zoomIn(animated = false) {
+  public zoomIn(animated = false): void {
     const centerX = this.canvasWidth / 2;
     const centerY = this.canvasHeight / 2;
-    this.zoomAt(centerX, centerY, 1.2, animated);
+    this.zoomAt(centerX, centerY, ZOOM_FACTOR, animated);
   }
 
-  public zoomOut(animated = false) {
+  public zoomOut(animated = false): void {
     const centerX = this.canvasWidth / 2;
     const centerY = this.canvasHeight / 2;
-    this.zoomAt(centerX, centerY, 0.8, animated);
+    this.zoomAt(centerX, centerY, 1 / ZOOM_FACTOR, animated);
   }
 
-  public resetView() {
+  public resetView(): void {
     this.fitImageToScreen();
     if (this.config.smooth) {
       this.startAnimation(this.scale, this.translateX, this.translateY);
@@ -556,15 +641,20 @@ class WebGLImageViewerEngine {
     }
   }
 
-  public destroy() {
+  public destroy(): void {
+    this.stopAnimation();
     this.removeEventListeners();
+    
     const { gl } = this;
     if (this.texture) {
       gl.deleteTexture(this.texture);
+      this.texture = null;
     }
     if (this.program) {
       gl.deleteProgram(this.program);
     }
+    
+    this.imageLoaded = false;
   }
 }
 
@@ -585,18 +675,17 @@ export class ViewerPro {
   private images: ImageObj[] = [];
   private currentIndex = 0;
   private webglOptions: NonNullable<ViewerProOptions['webglOptions']>;
+  private isDestroyed = false;
 
   constructor(options: ViewerProOptions = {}) {
-    this.webglOptions = {
-      initialScale: 1,
-      minScale: 0.1,
-      maxScale: 10,
-      smooth: true,
-      limitToBounds: true,
-      ...options.webglOptions,
-    };
+    this.webglOptions = { ...DEFAULT_CONFIG, ...options.webglOptions };
+    this.images = Array.isArray(options.images) ? [...options.images] : [];
+    
+    this.createContainer();
+    this.bindEvents();
+  }
 
-    // 创建主容器
+  private createContainer(): void {
     this.previewContainer = document.createElement('div');
     this.previewContainer.className = 'image-preview-container';
     this.previewContainer.style.cssText = `
@@ -606,8 +695,12 @@ export class ViewerPro {
     `;
     document.body.appendChild(this.previewContainer);
 
-    // 创建内部结构
-    this.previewContainer.innerHTML = `
+    this.previewContainer.innerHTML = this.getContainerHTML();
+    this.initializeElements();
+  }
+
+  private getContainerHTML(): string {
+    return `
       <div style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column;">
         <div style="position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
           <div id="previewTitle" style="color: white; font-size: 1.25rem; font-weight: 500;">图片预览</div>
@@ -619,7 +712,7 @@ export class ViewerPro {
         <div style="flex: 1; position: relative; display: flex; justify-content: center; align-items: center;">
           <div id="loadingIndicator" style="display: none; color: white; font-size: 1.2rem;">加载中...</div>
           <div id="errorMessage" style="display: none; color: white; background: rgba(255,0,0,0.2); padding: 1rem; border-radius: 0.5rem;">图片加载失败</div>
-          <canvas id="previewCanvas" style="max-width: 100%; max-height: 100%; cursor: grab;"></canvas>
+          <canvas id="previewCanvas" style="cursor: grab; display: none;"></canvas>
           
           <div id="prevImage" style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: white; font-size: 2rem; cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.5);">
             ${prevIcon}
@@ -642,33 +735,35 @@ export class ViewerPro {
         </div>
       </div>
     `;
-
-    // 获取元素引用
-    this.previewCanvas = this.previewContainer.querySelector('#previewCanvas') as HTMLCanvasElement;
-    this.previewTitle = this.previewContainer.querySelector('#previewTitle')!;
-    this.closeButton = this.previewContainer.querySelector('#closePreview')!;
-    this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLDivElement;
-    this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLDivElement;
-    this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement;
-    this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement;
-    this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
-    this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
-    this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
-
-    this.images = Array.isArray(options.images) ? options.images : [];
-
-    this.bindEvents();
   }
 
-  // 添加 init 方法以保持兼容性（虽然不需要做任何事情）
-  public init() {
-    // 简化版本在构造函数中已完成所有初始化
-    // 此方法仅为保持 API 兼容性
+  private initializeElements(): void {
+    const querySelector = <T extends Element>(selector: string): T => {
+      const element = this.previewContainer.querySelector(selector);
+      if (!element) {
+        throw new Error(`Element not found: ${selector}`);
+      }
+      return element as T;
+    };
+
+    this.previewCanvas = querySelector<HTMLCanvasElement>('#previewCanvas');
+    this.previewTitle = querySelector('#previewTitle');
+    this.closeButton = querySelector('#closePreview');
+    this.prevButton = querySelector<HTMLDivElement>('#prevImage');
+    this.nextButton = querySelector<HTMLDivElement>('#nextImage');
+    this.zoomInButton = querySelector<HTMLButtonElement>('#zoomIn');
+    this.zoomOutButton = querySelector<HTMLButtonElement>('#zoomOut');
+    this.resetZoomButton = querySelector<HTMLButtonElement>('#resetZoom');
+    this.loadingIndicator = querySelector('#loadingIndicator');
+    this.errorMessage = querySelector('#errorMessage');
+  }
+
+  public init(): this {
     console.log('ViewerPro initialized');
     return this;
   }
 
-  private bindEvents() {
+  private bindEvents(): void {
     this.closeButton.addEventListener('click', () => this.close());
     this.prevButton.addEventListener('click', () => this.navigate(-1));
     this.nextButton.addEventListener('click', () => this.navigate(1));
@@ -684,29 +779,41 @@ export class ViewerPro {
     });
   }
 
-  public addImages(images: ImageObj[]) {
-    this.images = images;
+  public addImages(images: ImageObj[]): this {
+    this.images = [...images];
     return this;
   }
 
-  public open(index: number) {
-    if (index < 0 || index >= this.images.length) return;
+  public open(index: number): this {
+    if (this.isDestroyed || index < 0 || index >= this.images.length) return this;
+    
     this.currentIndex = index;
-    this.updatePreview();
     this.previewContainer.style.display = 'flex';
-    setTimeout(() => {
-      this.previewContainer.style.opacity = '1';
-    }, 10);
+    
+    // 使用Promise确保DOM更新
+    requestAnimationFrame(() => {
+      this.updatePreview();
+      requestAnimationFrame(() => {
+        this.previewContainer.style.opacity = '1';
+      });
+    });
+    
     document.body.style.overflow = 'hidden';
     return this;
   }
 
-  public close() {
+  public close(): this {
+    if (this.isDestroyed) return this;
+    
     this.previewContainer.style.opacity = '0';
     setTimeout(() => {
-      this.previewContainer.style.display = 'none';
+      if (!this.isDestroyed) {
+        this.previewContainer.style.display = 'none';
+      }
     }, 300);
+    
     document.body.style.overflow = '';
+    
     if (this.webglViewer) {
       this.webglViewer.destroy();
       this.webglViewer = null;
@@ -714,26 +821,29 @@ export class ViewerPro {
     return this;
   }
 
-  // 添加销毁方法
-  public destroy() {
+  public destroy(): this {
+    if (this.isDestroyed) return this;
+    
+    this.isDestroyed = true;
+    
     if (this.webglViewer) {
       this.webglViewer.destroy();
       this.webglViewer = null;
     }
     
-    // 移除 DOM 元素
-    if (this.previewContainer && this.previewContainer.parentNode) {
+    if (this.previewContainer?.parentNode) {
       this.previewContainer.parentNode.removeChild(this.previewContainer);
     }
     
-    // 清理数据
     this.images = [];
     this.currentIndex = 0;
+    
+    // 恢复body样式
+    document.body.style.overflow = '';
     
     return this;
   }
 
-  // 添加获取当前状态的方法
   public getCurrentIndex(): number {
     return this.currentIndex;
   }
@@ -746,90 +856,121 @@ export class ViewerPro {
     return this.images[this.currentIndex] || null;
   }
 
-  // 添加是否打开的状态检查
   public isOpen(): boolean {
-    return this.previewContainer.style.display !== 'none';
+    return !this.isDestroyed && this.previewContainer.style.display !== 'none';
   }
 
-  // ...existing methods...
+  private async updatePreview(): Promise<void> {
+    if (this.isDestroyed) return;
 
-  private async updatePreview() {
     const currentImage = this.images[this.currentIndex];
     if (!currentImage) {
       console.warn('No image found at index:', this.currentIndex);
       return;
     }
 
+    // 清理之前的状态
+    this.cleanupPreviousState();
+
+    // 显示加载状态
     this.showLoading();
-    this.errorMessage.style.display = 'none';
-    this.previewCanvas.style.display = 'none';
     this.previewTitle.textContent = currentImage.title || '图片预览';
 
     try {
-      if (this.webglViewer) {
-        this.webglViewer.destroy();
-      }
-      
-      // 先设置 Canvas 的基本尺寸
-      this.previewCanvas.style.width = '80%';
-      this.previewCanvas.style.height = '80%';
-      this.previewCanvas.style.maxWidth = '90vw';
-      this.previewCanvas.style.maxHeight = '90vh';
-      
-      // 显示 Canvas 以确保可以获取正确的尺寸
-      this.previewCanvas.style.display = 'block';
-      
-      // 等待多帧让 CSS 生效和布局完成
-      await new Promise(resolve => requestAnimationFrame(() => 
-        requestAnimationFrame(resolve)
-      ));
-      
-      // 再次检查并设置正确的尺寸
-      const rect = this.previewCanvas.getBoundingClientRect();
-      console.log('Canvas rect after CSS:', rect);
-      
-      if (rect.width === 0 || rect.height === 0) {
-        // 如果仍然为 0，手动计算尺寸
-        const container = this.previewContainer;
-        const containerRect = container.getBoundingClientRect();
-        const targetWidth = Math.min(containerRect.width * 0.8, window.innerWidth * 0.9);
-        const targetHeight = Math.min(containerRect.height * 0.8, window.innerHeight * 0.9);
-        
-        this.previewCanvas.style.width = targetWidth + 'px';
-        this.previewCanvas.style.height = targetHeight + 'px';
-        
-        console.log('Manually set canvas size:', { targetWidth, targetHeight });
-        
-        // 再等一帧
-        await new Promise(resolve => requestAnimationFrame(resolve));
-      }
-      
-      this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
-      await this.webglViewer.loadImage(currentImage.src);
-      
-      this.hideLoading();
-      
-      console.log('Image loaded successfully:', currentImage.src);
-      
+      await this.setupCanvas();
+      await this.loadImageIntoViewer(currentImage.src);
+      this.hideLoading(); // 只有图片加载成功后才显示canvas
     } catch (error) {
       console.error('Failed to load image:', error);
-      this.hideLoading();
-      this.errorMessage.style.display = 'block';
-      this.errorMessage.textContent = `图片加载失败: ${error instanceof Error ? error.message : '未知错误'}`;
+      this.showError(error);
     }
 
     this.updateNavigationButtons();
   }
 
-  private showLoading() {
+  private cleanupPreviousState(): void {
+    if (this.webglViewer) {
+      this.webglViewer.destroy();
+      this.webglViewer = null;
+    }
+    this.errorMessage.style.display = 'none';
+    this.previewCanvas.style.display = 'none'; // 确保每次切换都隐藏canvas
+  }
+
+  private async setupCanvas(): Promise<void> {
+    const containerRect = this.previewContainer.getBoundingClientRect();
+    const targetWidth = Math.min(containerRect.width * 0.8, window.innerWidth * 0.9);
+    const targetHeight = Math.min(containerRect.height * 0.8, window.innerHeight * 0.9);
+    
+    // 设置Canvas样式
+    Object.assign(this.previewCanvas.style, {
+      width: `${targetWidth}px`,
+      height: `${targetHeight}px`,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      display: 'block'
+    });
+    
+    // 等待DOM更新
+    await this.waitForDOMUpdate();
+    
+    // 验证Canvas尺寸
+    const rect = this.previewCanvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      throw new Error(`Canvas size is invalid: ${rect.width}x${rect.height}`);
+    }
+
+    // 设置像素尺寸
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    this.previewCanvas.width = rect.width * devicePixelRatio;
+    this.previewCanvas.height = rect.height * devicePixelRatio;
+  }
+
+  private waitForDOMUpdate(): Promise<void> {
+    return new Promise(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(resolve);
+        });
+      });
+    });
+  }
+
+  private async loadImageIntoViewer(src: string): Promise<void> {
+    // 测试WebGL支持
+    const testGl = this.previewCanvas.getContext('webgl') || 
+                   this.previewCanvas.getContext('experimental-webgl');
+    if (!testGl) {
+      throw new Error('WebGL not supported in this browser');
+    }
+
+    this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
+    await this.webglViewer.loadImage(src);
+  }
+
+  private showLoading(): void {
     this.loadingIndicator.style.display = 'block';
+    this.previewCanvas.style.display = 'none'; // 加载时隐藏canvas
   }
 
-  private hideLoading() {
+  private hideLoading(): void {
     this.loadingIndicator.style.display = 'none';
+    // 只有图片加载成功后才显示canvas
+    if (this.webglViewer) {
+      this.previewCanvas.style.display = 'block';
+    }
   }
 
-  private navigate(direction: number) {
+  private showError(error: unknown): void {
+    this.hideLoading();
+    this.previewCanvas.style.display = 'none';
+    this.errorMessage.style.display = 'block';
+    
+    const errorMsg = error instanceof Error ? error.message : '未知错误';
+    this.errorMessage.textContent = `图片加载失败: ${errorMsg}`;
+  }
+
+  private navigate(direction: number): void {
     const newIndex = this.currentIndex + direction;
     if (newIndex >= 0 && newIndex < this.images.length) {
       this.currentIndex = newIndex;
@@ -837,52 +978,47 @@ export class ViewerPro {
     }
   }
 
-  private updateNavigationButtons() {
-    // 只有一张图片时隐藏导航按钮
-    if (this.images.length <= 1) {
-      this.prevButton.style.display = 'none';
-      this.nextButton.style.display = 'none';
-      return;
-    }
-
-    this.prevButton.style.display = 'flex';
-    this.nextButton.style.display = 'flex';
+  private updateNavigationButtons(): void {
+    const hasMultipleImages = this.images.length > 1;
     
-    this.prevButton.style.opacity = this.currentIndex === 0 ? '0.3' : '1';
-    this.nextButton.style.opacity = this.currentIndex === this.images.length - 1 ? '0.3' : '1';
-    this.prevButton.style.pointerEvents = this.currentIndex === 0 ? 'none' : 'auto';
-    this.nextButton.style.pointerEvents = this.currentIndex === this.images.length - 1 ? 'none' : 'auto';
+    this.prevButton.style.display = hasMultipleImages ? 'flex' : 'none';
+    this.nextButton.style.display = hasMultipleImages ? 'flex' : 'none';
+    
+    if (hasMultipleImages) {
+      const isFirst = this.currentIndex === 0;
+      const isLast = this.currentIndex === this.images.length - 1;
+      
+      this.updateButtonState(this.prevButton, !isFirst);
+      this.updateButtonState(this.nextButton, !isLast);
+    }
   }
 
-  private handleKeyDown(e: KeyboardEvent) {
-    if (this.previewContainer.style.display === 'none') return;
+  private updateButtonState(button: HTMLElement, enabled: boolean): void {
+    button.style.opacity = enabled ? '1' : '0.3';
+    button.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+
+  private handleKeyDown(e: KeyboardEvent): void {
+    if (!this.isOpen()) return;
     
-    // 阻止默认行为
     const preventKeys = ['Escape', 'ArrowLeft', 'ArrowRight', '+', '=', '-', '0'];
     if (preventKeys.includes(e.key)) {
       e.preventDefault();
     }
     
-    switch (e.key) {
-      case 'Escape':
-        this.close();
-        break;
-      case 'ArrowLeft':
-        this.navigate(-1);
-        break;
-      case 'ArrowRight':
-        this.navigate(1);
-        break;
-      case '+':
-      case '=':
-        this.webglViewer?.zoomIn(this.webglOptions.smooth);
-        break;
-      case '-':
-        this.webglViewer?.zoomOut(this.webglOptions.smooth);
-        break;
-      case '0':
-        this.webglViewer?.resetView();
-        break;
+    const keyActions: Record<string, () => void> = {
+      'Escape': () => this.close(),
+      'ArrowLeft': () => this.navigate(-1),
+      'ArrowRight': () => this.navigate(1),
+      '+': () => this.webglViewer?.zoomIn(this.webglOptions.smooth),
+      '=': () => this.webglViewer?.zoomIn(this.webglOptions.smooth),
+      '-': () => this.webglViewer?.zoomOut(this.webglOptions.smooth),
+      '0': () => this.webglViewer?.resetView(),
+    };
+    
+    const action = keyActions[e.key];
+    if (action) {
+      action();
     }
   }
 }
