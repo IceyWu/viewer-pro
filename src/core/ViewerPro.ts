@@ -307,9 +307,26 @@ class WebGLImageViewerEngine {
   private createGeometry(): void {
     const { gl } = this;
     
-    // 预定义几何数据
-    const positions = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
-    const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]);
+    // 修正几何数据 - 两个三角形组成一个矩形
+    // 位置: 从左下角开始，逆时针方向
+    const positions = new Float32Array([
+      -1, -1,  // 左下
+       1, -1,  // 右下
+      -1,  1,  // 左上
+      -1,  1,  // 左上
+       1, -1,  // 右下
+       1,  1   // 右上
+    ]);
+    
+    // 纹理坐标: 对应于图片坐标系（左上角为原点）
+    const texCoords = new Float32Array([
+       0, 1,  // 左下 -> 图片左下
+       1, 1,  // 右下 -> 图片右下
+       0, 0,  // 左上 -> 图片左上
+       0, 0,  // 左上 -> 图片左上
+       1, 1,  // 右下 -> 图片右下
+       1, 0   // 右上 -> 图片右上
+    ]);
 
     this.vertexBuffer = this.createBuffer(positions, 'a_position', 2);
     this.texCoordBuffer = this.createBuffer(texCoords, 'a_texCoord', 2);
@@ -336,6 +353,30 @@ class WebGLImageViewerEngine {
     return buffer;
   }
 
+  private bindVertexAttributes(): void {
+    const { gl } = this;
+    
+    // 绑定位置属性
+    if (this.vertexBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+      const posLocation = gl.getAttribLocation(this.program, 'a_position');
+      if (posLocation !== -1) {
+        gl.enableVertexAttribArray(posLocation);
+        gl.vertexAttribPointer(posLocation, 2, gl.FLOAT, false, 0, 0);
+      }
+    }
+    
+    // 绑定纹理坐标属性
+    if (this.texCoordBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+      const texCoordLocation = gl.getAttribLocation(this.program, 'a_texCoord');
+      if (texCoordLocation !== -1) {
+        gl.enableVertexAttribArray(texCoordLocation);
+        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+      }
+    }
+  }
+
   private createShader(type: number, source: string): WebGLShader {
     const { gl } = this;
     const shader = gl.createShader(type);
@@ -351,6 +392,7 @@ class WebGLImageViewerEngine {
       gl.deleteShader(shader);
       throw new Error(`Shader compile error: ${error}`);
     }
+    
     return shader;
   }
 
@@ -367,7 +409,6 @@ class WebGLImageViewerEngine {
 
   private forceRender(): void {
     // 强制渲染，忽略帧率限制
-    console.log('Force rendering, imageLoaded:', this.imageLoaded, 'texture:', !!this.texture);
     this.lastRenderTime = 0;
     this.render();
   }
@@ -519,21 +560,34 @@ class WebGLImageViewerEngine {
 
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     
-    // 优化纹理参数设置
+    // 设置纹理参数
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     
-    // 根据图片大小选择过滤方式
-    const useLinearFiltering = image.width * image.height <= 1024 * 1024; // 1MP threshold
-    const filter = useLinearFiltering ? gl.LINEAR : gl.LINEAR_MIPMAP_LINEAR;
+    // 检查是否为2的幂次方
+    const isPowerOf2Image = this.isPowerOf2(image.width) && this.isPowerOf2(image.height);
     
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // 对于非2的幂次方图片，必须使用LINEAR过滤器
+    if (isPowerOf2Image) {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    } else {
+      // 非2的幂次方图片必须使用LINEAR过滤器，不能使用mipmap
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
     
+    // 上传纹理数据
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     
-    // 为大图片生成 mipmaps
-    if (!useLinearFiltering && this.isPowerOf2(image.width) && this.isPowerOf2(image.height)) {
+    // 检查WebGL错误
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      throw new Error(`Failed to upload texture data: ${error}`);
+    }
+    
+    // 只为2的幂次方图片生成mipmaps
+    if (isPowerOf2Image) {
       gl.generateMipmap(gl.TEXTURE_2D);
     }
   }
@@ -548,8 +602,22 @@ class WebGLImageViewerEngine {
     const canvasWidth = this.canvas.width / devicePixelRatio;
     const canvasHeight = this.canvas.height / devicePixelRatio;
     
-    const scaleX = (this.imageWidth * this.scale) / canvasWidth;
-    const scaleY = (this.imageHeight * this.scale) / canvasHeight;
+    // 计算图片和canvas的纵横比
+    const imageAspect = this.imageWidth / this.imageHeight;
+    const canvasAspect = canvasWidth / canvasHeight;
+    
+    // 根据纵横比计算缩放，确保图片完整显示
+    let scaleX = this.scale;
+    let scaleY = this.scale;
+    
+    if (imageAspect > canvasAspect) {
+      // 图片比canvas更宽，需要在Y方向进行额外缩放
+      scaleY = scaleY * (canvasAspect / imageAspect);
+    } else {
+      // 图片比canvas更高，需要在X方向进行额外缩放
+      scaleX = scaleX * (imageAspect / canvasAspect);
+    }
+    
     const translateX = (this.translateX * 2) / canvasWidth;
     const translateY = -(this.translateY * 2) / canvasHeight;
     
@@ -565,10 +633,23 @@ class WebGLImageViewerEngine {
       return;
     }
     
-    const scaleX = this.canvasWidth / this.imageWidth;
-    const scaleY = this.canvasHeight / this.imageHeight;
-    const fitToScreenScale = Math.min(scaleX, scaleY);
-    this.scale = fitToScreenScale * this.config.initialScale;
+    // 计算图片和canvas的纵横比
+    const imageAspect = this.imageWidth / this.imageHeight;
+    const canvasAspect = this.canvasWidth / this.canvasHeight;
+    
+    // 计算适合屏幕的缩放值，确保图片完整显示在视口中
+    // 在WebGL NDC空间中，我们希望图片占据大部分视口但不超出边界
+    let fitScale: number;
+    
+    if (imageAspect > canvasAspect) {
+      // 图片比canvas更宽，按宽度适配
+      fitScale = 0.9; // 留一些边距
+    } else {
+      // 图片比canvas更高，按高度适配
+      fitScale = 0.9; // 留一些边距
+    }
+    
+    this.scale = fitScale * this.config.initialScale;
     this.translateX = 0;
     this.translateY = 0;
   }
@@ -622,9 +703,8 @@ class WebGLImageViewerEngine {
   }
 
   private getFitToScreenScale(): number {
-    const scaleX = this.canvasWidth / this.imageWidth;
-    const scaleY = this.canvasHeight / this.imageHeight;
-    return Math.min(scaleX, scaleY);
+    // 返回适合屏幕的基础缩放值
+    return 0.9 * this.config.initialScale;
   }
 
   private constrainImagePosition(): void {
@@ -679,6 +759,9 @@ class WebGLImageViewerEngine {
     if (!this.uniformLocations.image) {
       this.uniformLocations.image = gl.getUniformLocation(this.program, 'u_image');
     }
+    
+    // 重新绑定vertex buffers和设置attributes
+    this.bindVertexAttributes();
     
     // 设置矩阵
     const matrix = this.createMatrix();

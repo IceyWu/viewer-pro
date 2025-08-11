@@ -26,8 +26,8 @@ const images = [
     title: "山脉与湖泊",
   },
   {
-    src: "https://picsum.photos/id/1019/1200/800",
-    thumbnail: "https://picsum.photos/id/1019/400/300",
+    src: "http://localhost:3000/upload/avatar.jpg",
+    thumbnail: "http://localhost:3000/upload/avatar.jpg",
     title: "自然景观",
   },
   {
