@@ -15,8 +15,12 @@
   animation: fadeIn 0.3s ease forwards;
 }
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .image-preview-overlay {
   position: absolute;
@@ -71,7 +75,7 @@
   justify-content: center;
   align-items: center;
   background-color: rgba(255, 255, 255, 0.15);
-   box-sizing: border-box;
+  box-sizing: border-box;
   padding: 0.5rem;
 }
 .image-preview-close:hover {
@@ -157,7 +161,9 @@
   animation: spin 1s ease-in-out infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* 缩略图导航 */
 .thumbnail-nav {
@@ -176,12 +182,16 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.5rem 1.5rem 1.2rem 1.5rem;
-  background: linear-gradient(to top,rgba(0,0,0,0.45) 80%,rgba(0,0,0,0));
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.45) 80%,
+    rgba(0, 0, 0, 0)
+  );
   border-radius: 0 0 18px 18px;
   z-index: 30;
   box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.3) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 .thumbnail-nav::-webkit-scrollbar {
   height: 6px;
@@ -253,7 +263,7 @@
   width: 340px;
   min-width: 220px;
   max-width: 400px;
-  background: rgba(30,40,60,0.85);
+  background: rgba(30, 40, 60, 0.85);
   color: #fff;
   border-radius: 0 0 0 16px;
   margin: 0;
@@ -263,16 +273,18 @@
   font-size: 1rem;
   max-height: 100vh;
   align-self: stretch;
-  box-shadow: -2px 0 16px 0 rgba(0,0,0,0.12);
+  box-shadow: -2px 0 16px 0 rgba(0, 0, 0, 0.12);
   z-index: 20;
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: width 0.35s cubic-bezier(.4,2,.6,1), padding 0.35s cubic-bezier(.4,2,.6,1), background 0.25s, box-shadow 0.25s;
+  transition: width 0.35s cubic-bezier(0.4, 2, 0.6, 1),
+    padding 0.35s cubic-bezier(0.4, 2, 0.6, 1), background 0.25s,
+    box-shadow 0.25s;
 }
 .image-info-panel .info-panel-content {
   opacity: 1;
-  transition: opacity 0.25s cubic-bezier(.4,2,.6,1);
+  transition: opacity 0.25s cubic-bezier(0.4, 2, 0.6, 1);
   pointer-events: auto;
 }
 .image-info-panel.collapsed {
@@ -280,8 +292,8 @@
   min-width: 0;
   max-width: 32px;
   padding: 0;
-  background: rgba(30,40,60,0.7);
-  box-shadow: -2px 0 12px 0 rgba(0,0,0,0.10);
+  background: rgba(30, 40, 60, 0.7);
+  box-shadow: -2px 0 12px 0 rgba(0, 0, 0, 0.1);
 }
 .image-info-panel.collapsed .info-panel-content {
   opacity: 0;
@@ -294,10 +306,10 @@
   transform: translateY(-50%);
   width: 38px;
   height: 56px;
-  background: rgba(30,40,60,0.95);
+  background: rgba(30, 40, 60, 0.95);
   color: #fff;
   border-radius: 0 16px 16px 0;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,14 +318,14 @@
   z-index: 22;
   border: none;
   outline: none;
-  transition: background 0.2s, right 0.35s cubic-bezier(.4,2,.6,1);
+  transition: background 0.2s, right 0.35s cubic-bezier(0.4, 2, 0.6, 1);
 }
 .info-collapse-btn:hover {
   background: #2a3a5a;
 }
 .image-info-panel.collapsed .info-collapse-btn {
   right: -18px;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.18);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
 }
 .info-title {
   font-size: 1.2rem;
@@ -338,7 +350,7 @@
   transform: translateY(-50%);
   width: 48px;
   height: 48px;
-  background: rgba(30,40,60,0.65);
+  background: rgba(30, 40, 60, 0.65);
   color: #fff;
   border-radius: 50%;
   display: flex;
@@ -347,12 +359,12 @@
   cursor: pointer;
   z-index: 21;
   font-size: 2rem;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.18);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
   transition: background 0.2s;
   user-select: none;
 }
 .arrow-btn:hover {
-  background: rgba(30,40,60,0.85);
+  background: rgba(30, 40, 60, 0.85);
 }
 .left-arrow {
   left: 24px;
@@ -371,7 +383,7 @@
   background: none;
 }
 .corner-tools .control-button {
-  background: rgba(30,40,60,0.65);
+  background: rgba(30, 40, 60, 0.65);
   border-radius: 50%;
   width: 44px;
   height: 44px;
@@ -380,14 +392,14 @@
   justify-content: center;
   color: #fff;
   font-size: 1.3rem;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.12);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.12);
   border: none;
   margin: 0;
   padding: 0;
   transition: background 0.2s;
 }
 .corner-tools .control-button:hover {
-  background: rgba(30,40,60,0.85);
+  background: rgba(30, 40, 60, 0.85);
 }
 .corner-tools .image-preview-counter {
   color: #fff;
@@ -404,10 +416,10 @@
   bottom: 120px;
   min-width: 120px;
   min-height: 64px;
-  background: rgba(30,40,60,0.85);
+  background: rgba(30, 40, 60, 0.85);
   color: #fff;
   border-radius: 18px;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.18);
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -431,7 +443,7 @@
 .progress-bar {
   stroke: #fff;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.3s cubic-bezier(.4,2,.6,1);
+  transition: stroke-dashoffset 0.3s cubic-bezier(0.4, 2, 0.6, 1);
 }
 .progress-info {
   display: flex;
@@ -451,4 +463,137 @@
 #progressSize {
   font-size: 0.92rem;
   opacity: 0.7;
+}
+
+/* 加载进度指示器样式 */
+.loading-progress-indicator {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  min-width: 140px;
+  background: rgba(30, 40, 60, 0.95);
+  color: white;
+  border-radius: 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  padding: 16px 20px;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.loading-progress-indicator.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.progress-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-circle-container {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.progress-circle-svg {
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 0 4px rgba(76, 175, 80, 0.3));
+}
+
+.progress-circle-bg {
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2;
+  fill: none;
+}
+
+.progress-circle-bar {
+  stroke: #4caf50;
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 0 2px rgba(76, 175, 80, 0.5));
+}
+
+.progress-percent {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: #4caf50;
+  text-shadow: 0 0 4px rgba(76, 175, 80, 0.3);
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.progress-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+}
+
+.progress-size {
+  font-size: 12px;
+  opacity: 0.8;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+/* 脉动动画效果 */
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+.loading-progress-indicator.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .loading-progress-indicator {
+    right: 16px;
+    bottom: 16px;
+    min-width: 120px;
+    padding: 12px 16px;
+  }
+
+  .progress-content {
+    gap: 10px;
+  }
+
+  .progress-circle-container {
+    width: 28px;
+    height: 28px;
+  }
+
+  .progress-text {
+    font-size: 13px;
+  }
+
+  .progress-size {
+    font-size: 11px;
+  }
 }

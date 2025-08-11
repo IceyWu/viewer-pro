@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { LivePhotoViewer } from "live-photo";
 import { ref, onMounted, nextTick } from "vue";
 import { ViewerPro } from "../../src/index";
 import "../../src/core/ViewerPro.css";
@@ -17,13 +16,13 @@ const images = [
     type: "live-photo",
   },
   {
-    src: "http://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
-    thumbnail: "http://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    thumbnail: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
     title: "自然风景",
   },
   {
-    src: "https://picsum.photos/id/1018/1200/800",
-    thumbnail: "https://picsum.photos/id/1018/400/300",
+    src: "https://afilmory.innei.in/thumbnails/DSCF4430.webp",
+    thumbnail: "https://afilmory.innei.in/thumbnails/DSCF4430.webp",
     title: "山脉与湖泊",
   },
   {
@@ -124,6 +123,7 @@ const init = async () => {
     //   });
     // },
   });
+  console.log('🦄-----images-----', images);
   viewer.value.addImages(images);
   viewer.value.init();
 };

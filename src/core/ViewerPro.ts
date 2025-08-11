@@ -37,6 +37,21 @@ const ANIMATION_DURATION = 300;
 const ZOOM_FACTOR = 1.2;
 const DEFAULT_CANVAS_SIZE = { width: 800, height: 600 };
 
+// WebGL 相关常量
+const WEBGL_CONSTANTS = {
+  CONTEXT_LOST_EVENT: 'webglcontextlost',
+  CONTEXT_RESTORED_EVENT: 'webglcontextrestored',
+  MAX_TEXTURE_SIZE: 4096,
+  DEVICE_PIXEL_RATIO_THRESHOLD: 3,
+} as const;
+
+// 性能优化常量
+const PERFORMANCE_CONFIG = {
+  DEBOUNCE_RESIZE_MS: 16,
+  CANVAS_SIZE_CACHE_TTL: 1000,
+  MAX_RENDER_FPS: 60,
+} as const;
+
 // WebGL Image Viewer 引擎
 class WebGLImageViewerEngine {
   private canvas: HTMLCanvasElement;
@@ -44,6 +59,7 @@ class WebGLImageViewerEngine {
   private program!: WebGLProgram;
   private texture: WebGLTexture | null = null;
   private imageLoaded = false;
+  private isContextLost = false;
 
   // Transform state
   private scale = 1;
@@ -74,6 +90,18 @@ class WebGLImageViewerEngine {
 
   // Configuration
   private config: Required<NonNullable<ViewerProOptions['webglOptions']>>;
+  
+  // 性能优化
+  private lastRenderTime = 0;
+  private resizeTimeoutId: number | null = null;
+  
+  // WebGL 资源缓存
+  private vertexBuffer: WebGLBuffer | null = null;
+  private texCoordBuffer: WebGLBuffer | null = null;
+  private uniformLocations: {
+    matrix: WebGLUniformLocation | null;
+    image: WebGLUniformLocation | null;
+  } = { matrix: null, image: null };
 
   // Bound event handlers (使用箭头函数避免bind调用)
   private handleMouseDown = (e: MouseEvent) => this._handleMouseDown(e);
@@ -84,7 +112,9 @@ class WebGLImageViewerEngine {
   private handleTouchStart = (e: TouchEvent) => this._handleTouchStart(e);
   private handleTouchMove = (e: TouchEvent) => this._handleTouchMove(e);
   private handleTouchEnd = (e: TouchEvent) => this._handleTouchEnd(e);
-  private handleResize = () => this.resizeCanvas();
+  private handleResize = () => this.debouncedResizeCanvas();
+  private handleContextLost = (e: Event) => this._handleContextLost(e);
+  private handleContextRestored = () => this._handleContextRestored();
 
   // Shaders (移到类外部作为静态常量)
   private static readonly VERTEX_SHADER_SOURCE = `
@@ -124,7 +154,14 @@ class WebGLImageViewerEngine {
   }
 
   private getWebGLContext(): WebGLRenderingContext {
-    const gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
+    const gl = this.canvas.getContext('webgl', { 
+      alpha: true, 
+      antialias: true, 
+      powerPreference: 'high-performance' 
+    }) || this.canvas.getContext('experimental-webgl', { 
+      alpha: true, 
+      antialias: true 
+    });
     if (!gl) {
       throw new Error('WebGL not supported in this browser');
     }
@@ -141,6 +178,42 @@ class WebGLImageViewerEngine {
   private setupCanvas(): void {
     this.resizeCanvas();
     window.addEventListener('resize', this.handleResize, { passive: true });
+    
+    // WebGL 上下文丢失处理
+    this.canvas.addEventListener(WEBGL_CONSTANTS.CONTEXT_LOST_EVENT, this.handleContextLost);
+    this.canvas.addEventListener(WEBGL_CONSTANTS.CONTEXT_RESTORED_EVENT, this.handleContextRestored);
+  }
+
+  // 防抖调整画布大小
+  private debouncedResizeCanvas(): void {
+    if (this.resizeTimeoutId) {
+      clearTimeout(this.resizeTimeoutId);
+    }
+    this.resizeTimeoutId = window.setTimeout(() => {
+      this.resizeCanvas();
+      this.resizeTimeoutId = null;
+    }, PERFORMANCE_CONFIG.DEBOUNCE_RESIZE_MS);
+  }
+
+  // WebGL 上下文丢失处理
+  private _handleContextLost(e: Event): void {
+    e.preventDefault();
+    this.isContextLost = true;
+    this.stopAnimation();
+    console.warn('WebGL context lost');
+  }
+
+  private _handleContextRestored(): void {
+    this.isContextLost = false;
+    console.log('WebGL context restored');
+    try {
+      this.initWebGL();
+      if (this.imageLoaded) {
+        this.forceRender();
+      }
+    } catch (error) {
+      console.error('Failed to restore WebGL context:', error);
+    }
   }
 
   private resizeCanvas(): void {
@@ -162,7 +235,7 @@ class WebGLImageViewerEngine {
 
     if (this.imageLoaded) {
       this.fitImageToScreen();
-      this.render();
+      this.forceRender();
     }
   }
 
@@ -238,11 +311,11 @@ class WebGLImageViewerEngine {
     const positions = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
     const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]);
 
-    this.createBuffer(positions, 'a_position', 2);
-    this.createBuffer(texCoords, 'a_texCoord', 2);
+    this.vertexBuffer = this.createBuffer(positions, 'a_position', 2);
+    this.texCoordBuffer = this.createBuffer(texCoords, 'a_texCoord', 2);
   }
 
-  private createBuffer(data: Float32Array, attributeName: string, size: number): void {
+  private createBuffer(data: Float32Array, attributeName: string, size: number): WebGLBuffer {
     const { gl } = this;
     const buffer = gl.createBuffer();
     if (!buffer) {
@@ -259,6 +332,8 @@ class WebGLImageViewerEngine {
     
     gl.enableVertexAttribArray(location);
     gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+    
+    return buffer;
   }
 
   private createShader(type: number, source: string): WebGLShader {
@@ -279,42 +354,158 @@ class WebGLImageViewerEngine {
     return shader;
   }
 
-  async loadImage(url: string): Promise<void> {
-    const image = await this.loadImageElement(url);
+  async loadImage(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<void> {
+    const image = await this.loadImageElement(url, progressCallback);
     this.imageWidth = image.width;
     this.imageHeight = image.height;
     this.createTexture(image);
     this.imageLoaded = true;
     this.fitImageToScreen();
+    // 强制渲染，不受帧率限制
+    this.forceRender();
+  }
+
+  private forceRender(): void {
+    // 强制渲染，忽略帧率限制
+    console.log('Force rendering, imageLoaded:', this.imageLoaded, 'texture:', !!this.texture);
+    this.lastRenderTime = 0;
     this.render();
   }
 
-  private loadImageElement(url: string): Promise<HTMLImageElement> {
+  private loadImageElement(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<HTMLImageElement> {
+    return new Promise(async (resolve, reject) => {
+      // 首先尝试使用 fetch 获取进度信息
+      try {
+        const response = await fetch(url, {
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const contentLength = response.headers.get('Content-Length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+        let loaded = 0;
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Cannot read response body');
+        }
+
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          
+          chunks.push(value);
+          loaded += value.length;
+          
+          // 更新进度
+          if (total > 0 && progressCallback) {
+            progressCallback(loaded, total);
+          }
+        }
+
+        // 合并所有 chunks
+        const allChunks = new Uint8Array(loaded);
+        let offset = 0;
+        for (const chunk of chunks) {
+          allChunks.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        // 创建 blob 和 object URL
+        const blob = new Blob([allChunks]);
+        const objectURL = URL.createObjectURL(blob);
+
+        const image = new Image();
+        
+        const cleanup = () => {
+          image.onload = null;
+          image.onerror = null;
+          URL.revokeObjectURL(objectURL);
+        };
+
+        image.onload = () => {
+          cleanup();
+          console.log('Image loaded via fetch:', url);
+          resolve(image);
+        };
+        
+        image.onerror = () => {
+          cleanup();
+          console.warn('Failed to load image via fetch, trying direct load:', url);
+          // 如果 blob 方式失败，尝试直接加载
+          this.loadImageDirectly(url, progressCallback).then(resolve).catch(reject);
+        };
+        
+        image.src = objectURL;
+
+      } catch (error) {
+        console.warn('Fetch failed, trying direct image load:', error);
+        // 如果 fetch 失败，尝试直接加载图片
+        this.loadImageDirectly(url, progressCallback).then(resolve).catch(reject);
+      }
+    });
+  }
+
+  private loadImageDirectly(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const image = new Image();
-      image.crossOrigin = 'anonymous';
       
-      const cleanup = () => {
-        image.onload = null;
-        image.onerror = null;
+      // 尝试不同的 crossOrigin 设置
+      const tryLoad = (crossOriginSetting: string | null) => {
+        return new Promise<HTMLImageElement>((resolveLoad, rejectLoad) => {
+          if (crossOriginSetting) {
+            image.crossOrigin = crossOriginSetting;
+          }
+          
+          const cleanup = () => {
+            image.onload = null;
+            image.onerror = null;
+          };
+
+          image.onload = () => {
+            cleanup();
+            console.log(`Image loaded directly with crossOrigin=${crossOriginSetting}:`, url);
+            
+            // 模拟进度完成
+            if (progressCallback) {
+              progressCallback(100, 100);
+            }
+            
+            resolveLoad(image);
+          };
+          
+          image.onerror = () => {
+            cleanup();
+            rejectLoad(new Error(`Failed to load image with crossOrigin=${crossOriginSetting}`));
+          };
+          
+          image.src = url;
+        });
       };
 
-      image.onload = () => {
-        cleanup();
-        resolve(image);
-      };
-      
-      image.onerror = () => {
-        cleanup();
-        reject(new Error(`Failed to load image: ${url}`));
-      };
-      
-      image.src = url;
+      // 按顺序尝试不同的 crossOrigin 设置
+      tryLoad('anonymous')
+        .catch(() => tryLoad('use-credentials'))
+        .catch(() => tryLoad(null))
+        .then(resolve)
+        .catch(() => reject(new Error(`Failed to load image: ${url}`)));
     });
   }
 
   private createTexture(image: HTMLImageElement): void {
     const { gl } = this;
+    
+    // 验证图片尺寸
+    if (image.width > WEBGL_CONSTANTS.MAX_TEXTURE_SIZE || image.height > WEBGL_CONSTANTS.MAX_TEXTURE_SIZE) {
+      console.warn(`Image size ${image.width}x${image.height} exceeds maximum texture size ${WEBGL_CONSTANTS.MAX_TEXTURE_SIZE}`);
+    }
     
     // 清理旧纹理
     if (this.texture) {
@@ -327,16 +518,33 @@ class WebGLImageViewerEngine {
     }
 
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    
+    // 优化纹理参数设置
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    
+    // 根据图片大小选择过滤方式
+    const useLinearFiltering = image.width * image.height <= 1024 * 1024; // 1MP threshold
+    const filter = useLinearFiltering ? gl.LINEAR : gl.LINEAR_MIPMAP_LINEAR;
+    
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    
+    // 为大图片生成 mipmaps
+    if (!useLinearFiltering && this.isPowerOf2(image.width) && this.isPowerOf2(image.height)) {
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
+  }
+
+  private isPowerOf2(value: number): boolean {
+    return (value & (value - 1)) === 0;
   }
 
   private createMatrix(): Float32Array {
-    // 优化矩阵计算
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    // 缓存设备像素比，避免重复计算
+    const devicePixelRatio = Math.min(window.devicePixelRatio || 1, WEBGL_CONSTANTS.DEVICE_PIXEL_RATIO_THRESHOLD);
     const canvasWidth = this.canvas.width / devicePixelRatio;
     const canvasHeight = this.canvas.height / devicePixelRatio;
     
@@ -353,6 +561,10 @@ class WebGLImageViewerEngine {
   }
 
   private fitImageToScreen(): void {
+    if (this.imageWidth === 0 || this.imageHeight === 0 || this.canvasWidth === 0 || this.canvasHeight === 0) {
+      return;
+    }
+    
     const scaleX = this.canvasWidth / this.imageWidth;
     const scaleY = this.canvasHeight / this.imageHeight;
     const fitToScreenScale = Math.min(scaleX, scaleY);
@@ -435,6 +647,18 @@ class WebGLImageViewerEngine {
   }
 
   private render(): void {
+    // 帧率控制
+    const now = performance.now();
+    const minFrameInterval = 1000 / PERFORMANCE_CONFIG.MAX_RENDER_FPS;
+    if (now - this.lastRenderTime < minFrameInterval) {
+      return;
+    }
+    this.lastRenderTime = now;
+
+    if (this.isContextLost) {
+      return;
+    }
+
     const { gl } = this;
     
     // 清除画布
@@ -448,14 +672,20 @@ class WebGLImageViewerEngine {
 
     gl.useProgram(this.program);
     
+    // 使用缓存的 uniform 位置
+    if (!this.uniformLocations.matrix) {
+      this.uniformLocations.matrix = gl.getUniformLocation(this.program, 'u_matrix');
+    }
+    if (!this.uniformLocations.image) {
+      this.uniformLocations.image = gl.getUniformLocation(this.program, 'u_image');
+    }
+    
     // 设置矩阵
-    const matrixLocation = gl.getUniformLocation(this.program, 'u_matrix');
     const matrix = this.createMatrix();
-    gl.uniformMatrix3fv(matrixLocation, false, matrix);
+    gl.uniformMatrix3fv(this.uniformLocations.matrix, false, matrix);
     
     // 设置纹理
-    const imageLocation = gl.getUniformLocation(this.program, 'u_image');
-    gl.uniform1i(imageLocation, 0);
+    gl.uniform1i(this.uniformLocations.image, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     
@@ -476,6 +706,8 @@ class WebGLImageViewerEngine {
     this.canvas.removeEventListener('wheel', this.handleWheel);
     this.canvas.removeEventListener('dblclick', this.handleDoubleClick);
     this.canvas.removeEventListener('touchstart', this.handleTouchStart);
+    this.canvas.removeEventListener(WEBGL_CONSTANTS.CONTEXT_LOST_EVENT, this.handleContextLost);
+    this.canvas.removeEventListener(WEBGL_CONSTANTS.CONTEXT_RESTORED_EVENT, this.handleContextRestored);
     window.removeEventListener('resize', this.handleResize);
     
     // 清理document级别的事件监听器
@@ -514,6 +746,8 @@ class WebGLImageViewerEngine {
     this.canvas.style.cursor = 'grab';
     document.removeEventListener('mousemove', this.handleMouseMove);
     document.removeEventListener('mouseup', this.handleMouseUp);
+    // 确保拖拽结束后进行一次完整渲染
+    this.forceRender();
   }
 
   private _handleWheel(e: WheelEvent): void {
@@ -593,6 +827,8 @@ class WebGLImageViewerEngine {
     this.lastTouchDistance = 0;
     document.removeEventListener('touchmove', this.handleTouchMove);
     document.removeEventListener('touchend', this.handleTouchEnd);
+    // 确保触摸结束后进行一次完整渲染
+    this.forceRender();
   }
 
   private zoomAt(x: number, y: number, scaleFactor: number, animated = false): void {
@@ -616,7 +852,7 @@ class WebGLImageViewerEngine {
       this.translateX = newTranslateX;
       this.translateY = newTranslateY;
       this.constrainImagePosition();
-      this.render();
+      this.forceRender();
     }
   }
 
@@ -637,7 +873,7 @@ class WebGLImageViewerEngine {
     if (this.config.smooth) {
       this.startAnimation(this.scale, this.translateX, this.translateY);
     } else {
-      this.render();
+      this.forceRender();
     }
   }
 
@@ -646,36 +882,67 @@ class WebGLImageViewerEngine {
     this.removeEventListeners();
     
     const { gl } = this;
+    
+    // 清理 WebGL 资源
     if (this.texture) {
       gl.deleteTexture(this.texture);
       this.texture = null;
     }
+    
+    if (this.vertexBuffer) {
+      gl.deleteBuffer(this.vertexBuffer);
+      this.vertexBuffer = null;
+    }
+    
+    if (this.texCoordBuffer) {
+      gl.deleteBuffer(this.texCoordBuffer);
+      this.texCoordBuffer = null;
+    }
+    
     if (this.program) {
       gl.deleteProgram(this.program);
     }
     
+    // 清理定时器
+    if (this.resizeTimeoutId) {
+      clearTimeout(this.resizeTimeoutId);
+      this.resizeTimeoutId = null;
+    }
+    
+    // 重置状态
     this.imageLoaded = false;
+    this.isContextLost = false;
+    this.uniformLocations = { matrix: null, image: null };
   }
 }
 
 export class ViewerPro {
-  private previewContainer: HTMLElement;
-  private previewCanvas: HTMLCanvasElement;
+  private previewContainer!: HTMLElement;
+  private previewCanvas!: HTMLCanvasElement;
   private webglViewer: WebGLImageViewerEngine | null = null;
-  private previewTitle: HTMLElement;
-  private closeButton: HTMLElement;
-  private prevButton: HTMLDivElement;
-  private nextButton: HTMLDivElement;
-  private zoomInButton: HTMLButtonElement;
-  private zoomOutButton: HTMLButtonElement;
-  private resetZoomButton: HTMLButtonElement;
-  private loadingIndicator: HTMLElement;
-  private errorMessage: HTMLElement;
+  private previewTitle!: HTMLElement;
+  private closeButton!: HTMLElement;
+  private prevButton!: HTMLDivElement;
+  private nextButton!: HTMLDivElement;
+  private zoomInButton!: HTMLButtonElement;
+  private zoomOutButton!: HTMLButtonElement;
+  private resetZoomButton!: HTMLButtonElement;
+  private loadingIndicator!: HTMLElement;
+  private errorMessage!: HTMLElement;
+  private progressCircle!: SVGCircleElement;
+  private progressPercent!: HTMLElement;
+  private progressText!: HTMLElement;
+  private progressSize!: HTMLElement;
 
   private images: ImageObj[] = [];
   private currentIndex = 0;
-  private webglOptions: NonNullable<ViewerProOptions['webglOptions']>;
+  private webglOptions: Required<NonNullable<ViewerProOptions['webglOptions']>>;
   private isDestroyed = false;
+  
+  // 性能优化相关属性
+  private resizeTimeoutId: number | null = null;
+  private lastRenderTime = 0;
+  private canvasSizeCache: { width: number; height: number; timestamp: number } | null = null;
 
   constructor(options: ViewerProOptions = {}) {
     this.webglOptions = { ...DEFAULT_CONFIG, ...options.webglOptions };
@@ -710,7 +977,6 @@ export class ViewerPro {
         </div>
         
         <div style="flex: 1; position: relative; display: flex; justify-content: center; align-items: center;">
-          <div id="loadingIndicator" style="display: none; color: white; font-size: 1.2rem;">加载中...</div>
           <div id="errorMessage" style="display: none; color: white; background: rgba(255,0,0,0.2); padding: 1rem; border-radius: 0.5rem;">图片加载失败</div>
           <canvas id="previewCanvas" style="cursor: grab; display: none;"></canvas>
           
@@ -719,6 +985,24 @@ export class ViewerPro {
           </div>
           <div id="nextImage" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); color: white; font-size: 2rem; cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.5);">
             ${nextIcon}
+          </div>
+        </div>
+        
+        <!-- 加载进度指示器 - 右下角 -->
+        <div id="loadingIndicator" class="loading-progress-indicator">
+          <div class="progress-content">
+            <div class="progress-circle-container">
+              <svg class="progress-circle-svg" width="32" height="32">
+                <circle class="progress-circle-bg" cx="16" cy="16" r="14"/>
+                <circle id="progressCircle" class="progress-circle-bar" cx="16" cy="16" r="14" 
+                        stroke-dasharray="87.96" stroke-dashoffset="87.96"/>
+              </svg>
+              <div id="progressPercent" class="progress-percent">0%</div>
+            </div>
+            <div class="progress-info">
+              <div id="progressText" class="progress-text">加载中</div>
+              <div id="progressSize" class="progress-size">0 MB</div>
+            </div>
           </div>
         </div>
         
@@ -756,6 +1040,10 @@ export class ViewerPro {
     this.resetZoomButton = querySelector<HTMLButtonElement>('#resetZoom');
     this.loadingIndicator = querySelector('#loadingIndicator');
     this.errorMessage = querySelector('#errorMessage');
+    this.progressCircle = querySelector<SVGCircleElement>('#progressCircle');
+    this.progressPercent = querySelector('#progressPercent');
+    this.progressText = querySelector('#progressText');
+    this.progressSize = querySelector('#progressSize');
   }
 
   public init(): this {
@@ -764,6 +1052,9 @@ export class ViewerPro {
   }
 
   private bindEvents(): void {
+    // 使用防抖的事件处理器
+    const debouncedKeyHandler = this.debounce((e: KeyboardEvent) => this.handleKeyDown(e), 50);
+    
     this.closeButton.addEventListener('click', () => this.close());
     this.prevButton.addEventListener('click', () => this.navigate(-1));
     this.nextButton.addEventListener('click', () => this.navigate(1));
@@ -771,12 +1062,20 @@ export class ViewerPro {
     this.zoomOutButton.addEventListener('click', () => this.webglViewer?.zoomOut(this.webglOptions.smooth));
     this.resetZoomButton.addEventListener('click', () => this.webglViewer?.resetView());
     
-    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    document.addEventListener('keydown', debouncedKeyHandler);
     this.previewContainer.addEventListener('click', (e) => {
       if (e.target === this.previewContainer) {
         this.close();
       }
     });
+  }
+
+  private debounce<T extends (...args: any[]) => void>(func: T, wait: number): T {
+    let timeout: number | null = null;
+    return ((...args: any[]) => {
+      if (timeout) clearTimeout(timeout);
+      timeout = window.setTimeout(() => func(...args), wait);
+    }) as T;
   }
 
   public addImages(images: ImageObj[]): this {
@@ -826,22 +1125,47 @@ export class ViewerPro {
     
     this.isDestroyed = true;
     
+    // 清理 WebGL 查看器
     if (this.webglViewer) {
       this.webglViewer.destroy();
       this.webglViewer = null;
     }
     
+    // 清理缓存
+    this.canvasSizeCache = null;
+    
+    // 清理定时器
+    if (this.resizeTimeoutId) {
+      clearTimeout(this.resizeTimeoutId);
+      this.resizeTimeoutId = null;
+    }
+    
+    // 清理 DOM 事件监听器
+    this.removeAllEventListeners();
+    
+    // 从 DOM 中移除容器
     if (this.previewContainer?.parentNode) {
       this.previewContainer.parentNode.removeChild(this.previewContainer);
     }
     
+    // 重置数据
     this.images = [];
     this.currentIndex = 0;
     
-    // 恢复body样式
+    // 恢复 body 样式
     document.body.style.overflow = '';
     
     return this;
+  }
+
+  private removeAllEventListeners(): void {
+    // 移除事件监听器的逻辑
+    // 由于事件是在 bindEvents 中绑定的，这里应该相应地移除
+    // 但由于我们销毁了整个容器，大部分事件监听器会自动清理
+    
+    // 只需要清理 document 级别的事件监听器
+    const debouncedKeyHandler = this.debounce((e: KeyboardEvent) => this.handleKeyDown(e), 50);
+    document.removeEventListener('keydown', debouncedKeyHandler);
   }
 
   public getCurrentIndex(): number {
@@ -879,7 +1203,8 @@ export class ViewerPro {
     try {
       await this.setupCanvas();
       await this.loadImageIntoViewer(currentImage.src);
-      this.hideLoading(); // 只有图片加载成功后才显示canvas
+      // 图片加载成功后，确保 canvas 可见并隐藏加载指示器
+      this.hideLoading();
     } catch (error) {
       console.error('Failed to load image:', error);
       this.showError(error);
@@ -894,22 +1219,31 @@ export class ViewerPro {
       this.webglViewer = null;
     }
     this.errorMessage.style.display = 'none';
-    this.previewCanvas.style.display = 'none'; // 确保每次切换都隐藏canvas
+    // 隐藏 canvas 内容但保持其 display 状态
+    this.previewCanvas.style.visibility = 'hidden';
   }
 
   private async setupCanvas(): Promise<void> {
+    // 使用缓存的 canvas 尺寸以提升性能
+    const now = Date.now();
+    if (this.canvasSizeCache && (now - this.canvasSizeCache.timestamp) < PERFORMANCE_CONFIG.CANVAS_SIZE_CACHE_TTL) {
+      const { width, height } = this.canvasSizeCache;
+      this.applyCanvasSize(width, height);
+      return;
+    }
+
     const containerRect = this.previewContainer.getBoundingClientRect();
     const targetWidth = Math.min(containerRect.width * 0.8, window.innerWidth * 0.9);
     const targetHeight = Math.min(containerRect.height * 0.8, window.innerHeight * 0.9);
     
-    // 设置Canvas样式
-    Object.assign(this.previewCanvas.style, {
-      width: `${targetWidth}px`,
-      height: `${targetHeight}px`,
-      maxWidth: 'none',
-      maxHeight: 'none',
-      display: 'block'
-    });
+    // 缓存计算结果
+    this.canvasSizeCache = {
+      width: targetWidth,
+      height: targetHeight,
+      timestamp: now
+    };
+    
+    this.applyCanvasSize(targetWidth, targetHeight);
     
     // 等待DOM更新
     await this.waitForDOMUpdate();
@@ -920,43 +1254,138 @@ export class ViewerPro {
       throw new Error(`Canvas size is invalid: ${rect.width}x${rect.height}`);
     }
 
-    // 设置像素尺寸
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    // 设置像素尺寸，限制设备像素比以避免过大的纹理
+    const devicePixelRatio = Math.min(window.devicePixelRatio || 1, WEBGL_CONSTANTS.DEVICE_PIXEL_RATIO_THRESHOLD);
     this.previewCanvas.width = rect.width * devicePixelRatio;
     this.previewCanvas.height = rect.height * devicePixelRatio;
+  }
+
+  private applyCanvasSize(width: number, height: number): void {
+    Object.assign(this.previewCanvas.style, {
+      width: `${width}px`,
+      height: `${height}px`,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      display: 'block', // 确保 canvas 可见
+      visibility: 'hidden' // 先隐藏内容，等加载完成后显示
+    });
   }
 
   private waitForDOMUpdate(): Promise<void> {
     return new Promise(resolve => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          requestAnimationFrame(resolve);
+          requestAnimationFrame(() => resolve());
         });
       });
     });
   }
 
   private async loadImageIntoViewer(src: string): Promise<void> {
-    // 测试WebGL支持
-    const testGl = this.previewCanvas.getContext('webgl') || 
-                   this.previewCanvas.getContext('experimental-webgl');
-    if (!testGl) {
+    console.log('Loading image into viewer:', src);
+    
+    // 预检查 WebGL 支持
+    if (!this.isWebGLSupported()) {
       throw new Error('WebGL not supported in this browser');
     }
 
-    this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
-    await this.webglViewer.loadImage(src);
+    try {
+      this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
+      await this.webglViewer.loadImage(src, (loaded, total) => {
+        this.updateProgress(loaded, total);
+      });
+      console.log('Image loaded successfully into WebGL viewer');
+    } catch (error) {
+      console.error('Failed to load image into WebGL viewer:', error);
+      // 清理失败的 WebGL viewer
+      if (this.webglViewer) {
+        this.webglViewer.destroy();
+        this.webglViewer = null;
+      }
+      throw error;
+    }
+  }
+
+  private isWebGLSupported(): boolean {
+    try {
+      const testCanvas = document.createElement('canvas');
+      const gl = testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl');
+      return !!gl;
+    } catch (e) {
+      return false;
+    }
   }
 
   private showLoading(): void {
+    console.log('Showing loading indicator');
     this.loadingIndicator.style.display = 'block';
-    this.previewCanvas.style.display = 'none'; // 加载时隐藏canvas
+    // 强制重绘后添加显示类
+    requestAnimationFrame(() => {
+      this.loadingIndicator.classList.add('show', 'pulse');
+    });
+    // 重置进度
+    this.updateProgress(0, 100);
+    // 加载时隐藏 canvas 内容
+    this.previewCanvas.style.visibility = 'hidden';
+  }
+
+  private updateProgress(loaded: number, total: number): void {
+    const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+    const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+    const totalMB = (total / (1024 * 1024)).toFixed(1);
+    
+    // 更新百分比文本
+    this.progressPercent.textContent = `${percent}%`;
+    
+    // 更新进度圆环 (circumference = 2 * π * r = 2 * π * 14 ≈ 87.96)
+    const circumference = 87.96;
+    const offset = circumference - (percent / 100) * circumference;
+    this.progressCircle.style.strokeDashoffset = offset.toString();
+    
+    // 根据进度改变颜色
+    if (percent < 30) {
+      this.progressCircle.style.stroke = '#FF9800'; // 橙色
+      this.progressPercent.style.color = '#FF9800';
+    } else if (percent < 70) {
+      this.progressCircle.style.stroke = '#2196F3'; // 蓝色
+      this.progressPercent.style.color = '#2196F3';
+    } else {
+      this.progressCircle.style.stroke = '#4CAF50'; // 绿色
+      this.progressPercent.style.color = '#4CAF50';
+    }
+    
+    // 更新文本信息
+    if (percent < 100) {
+      this.progressText.textContent = '加载中';
+      this.progressSize.textContent = total > 0 ? `${loadedMB} / ${totalMB} MB` : `${loadedMB} MB`;
+    } else {
+      this.progressText.textContent = '处理中';
+      this.progressSize.textContent = `${totalMB} MB`;
+      // 完成时添加特殊样式
+      this.loadingIndicator.classList.remove('pulse');
+      this.progressCircle.style.stroke = '#4CAF50';
+      this.progressPercent.style.color = '#4CAF50';
+    }
   }
 
   private hideLoading(): void {
-    this.loadingIndicator.style.display = 'none';
-    // 只有图片加载成功后才显示canvas
+    console.log('Hiding loading, webglViewer exists:', !!this.webglViewer);
+    
+    // 停止脉动动画
+    this.loadingIndicator.classList.remove('pulse');
+    
+    // 延迟隐藏以显示完成状态
+    setTimeout(() => {
+      this.loadingIndicator.classList.remove('show');
+      setTimeout(() => {
+        this.loadingIndicator.style.display = 'none';
+      }, 400); // 等待动画完成
+    }, 500); // 显示完成状态500ms
+    
+    // 图片加载成功后显示 canvas 内容
     if (this.webglViewer) {
+      console.log('Setting canvas visibility to visible');
+      this.previewCanvas.style.visibility = 'visible';
       this.previewCanvas.style.display = 'block';
     }
   }
@@ -1002,7 +1431,7 @@ export class ViewerPro {
     if (!this.isOpen()) return;
     
     const preventKeys = ['Escape', 'ArrowLeft', 'ArrowRight', '+', '=', '-', '0'];
-    if (preventKeys.includes(e.key)) {
+    if (preventKeys.indexOf(e.key) !== -1) {
       e.preventDefault();
     }
     
