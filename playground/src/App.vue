@@ -77,10 +77,10 @@ const init = async () => {
   await nextTick();
   viewer.value = new ViewerPro({
     loadingNode: customLoading,
-    renderNode: customRender,
-    onImageLoad: (imgObj: ImageObj, idx: number) => {
-      console.log("图片加载完成:", imgObj, idx);
-    },
+    // renderNode: customRender,
+    // onImageLoad: (imgObj: ImageObj, idx: number) => {
+    //   console.log("图片加载完成:", imgObj, idx);
+    // },
   });
   viewer.value.addImages(images);
   viewer.value.init();

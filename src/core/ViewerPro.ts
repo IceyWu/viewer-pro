@@ -8,6 +8,8 @@ import {
   fullscreenIcon,
   fullscreenExitIcon,
   downloadIcon,
+  infoIcon,
+  gridIcon,
 } from './icons';
 
 // Constants for better maintainability
@@ -51,6 +53,8 @@ export class ViewerPro {
   private errorMessage!: HTMLElement;
   private thumbnailNav!: HTMLElement;
   private imageContainer!: HTMLElement;
+  private toggleInfoBtn!: HTMLButtonElement;
+  private toggleThumbsBtn!: HTMLButtonElement;
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
   private infoPanel!: HTMLElement;
@@ -120,11 +124,13 @@ export class ViewerPro {
             </div>
             <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
             <div class="corner-tools" id="cornerTools">
+              <button class="control-button" id="toggleThumbnails" title="缩略图">${gridIcon}</button>
               <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
               <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
               <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
               <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
               <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
+              <button class="control-button" id="toggleInfoPanelBtn" title="信息">${infoIcon}</button>
               <span class="image-preview-counter" id="imageCounter">1 / 1</span>
             </div>
           </div>
@@ -153,6 +159,8 @@ export class ViewerPro {
     this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
     this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement;
     this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement;
+  this.toggleInfoBtn = this.previewContainer.querySelector('#toggleInfoPanelBtn') as HTMLButtonElement;
+  this.toggleThumbsBtn = this.previewContainer.querySelector('#toggleThumbnails') as HTMLButtonElement;
     this.imageCounter = this.previewContainer.querySelector('#imageCounter')!;
     this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
     this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
@@ -186,6 +194,8 @@ export class ViewerPro {
     this.resetZoomButton.addEventListener('click', () => this.resetZoom());
     this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
     this.downloadButton.addEventListener('click', () => this.downloadCurrentImage());
+  this.toggleInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
+  this.toggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     this.previewImage.addEventListener('mousedown', (e) => this.startDrag(e));
     this.previewImage.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
@@ -544,6 +554,12 @@ export class ViewerPro {
 
   private hideProgress() {
     this.progressMask.style.display = 'none';
+  }
+
+  // 缩略图抽屉开关（主要用于移动端）
+  private toggleThumbnails() {
+    if (!this.thumbnailNav) return;
+    this.thumbnailNav.classList.toggle('open');
   }
 
   // 新增：清理资源的方法

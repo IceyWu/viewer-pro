@@ -29,3 +29,9 @@ export const downloadIcon = `
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE --><path fill="currentColor" d="m12 16l-5-5l1.4-1.45l2.6 2.6V4h2v8.15l2.6-2.6L17 11zm-6 4q-.825 0-1.412-.587T4 18v-3h2v3h12v-3h2v3q0 .825-.587 1.413T18 20z"/></svg>
 
 `;
+export const infoIcon = `
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE --><path fill="currentColor" d="M11 17h2v-6h-2zm1-8.25q.525 0 .888-.362T13.25 7.5t-.362-.888T12 6.25t-.888.362T10.75 7.5t.362.888T12 8.75M12 22q-2.075 0-3.9-.788t-3.175-2.137t-2.137-3.175T2 12t.788-3.9t 2.137-3.175T8.1 2.788T12 2t3.9.788t3.175 2.137T21.212 8.1T22 12t-.788 3.9t-2.137 3.175t-3.175 2.137T12 22"/></svg>
+`;
+export const gridIcon = `
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE --><path fill="currentColor" d="M10 10V4H4v6zm10 0V4h-6v6zM10 20v-6H4v6zm10 0v-6h-6v6z"/></svg>
+`;
