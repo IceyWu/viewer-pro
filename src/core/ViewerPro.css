@@ -258,6 +258,7 @@
   justify-content: center;
   align-items: center;
   background-color: rgba(0, 0, 0, 0.5);
+  z-index: 60; /* 确保盖住自定义渲染节点与箭头等 */
 }
 /* 错误状态样式 */
 .error-message {

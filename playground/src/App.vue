@@ -6,7 +6,7 @@ import { LivePhotoViewer } from "live-photo";
 
 // 示例图片数据
 const images: ImageObj[] = [
- {
+  {
     src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
     thumbnail: "https://picsum.photos/id/1015/400/300",
     photoSrc:
@@ -18,7 +18,8 @@ const images: ImageObj[] = [
   },
   {
     src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
-    thumbnail: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    thumbnail:
+      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
     title: "自然风景",
   },
   {
@@ -45,23 +46,44 @@ onMounted(() => {
 });
 
 const init = async () => {
-  // 1. 自定义 loading 节点
-  const customLoading = document.createElement("div");
-  customLoading.innerHTML = `
-        <div style="color: #fff; font-size: 18px; display: flex; flex-direction: column; align-items: center;">
-          <svg width="32" height="32" viewBox="0 0 50 50">
-            <circle cx="25" cy="25" r="20" fill="none" stroke="#3B82F6" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
-              <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
-            </circle>
-          </svg>
-          <span>图片加载中，请稍候...</span>
-        </div>
+  // 1. 自定义 loading：按图片/索引动态返回不同节点
+  const customLoading = (imgObj: ImageObj, idx: number) => {
+    console.log('🌳-----customLoading-----', imgObj,idx);
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "10px";
+    wrap.style.color = "#fff";
+    const palette = ["#60A5FA", "#34D399", "#F59E0B", "#EF4444", "#A78BFA"];
+    const color = palette[idx % palette.length];
+
+    if (imgObj.type === "live-photo") {
+      wrap.innerHTML = `
+        <svg width="40" height="40" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="20" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
+            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.8s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+        <span>Live Photo 加载中…（第 ${idx + 1} 张）</span>
       `;
+    } else {
+      wrap.innerHTML = `
+        <svg width="36" height="36" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="20" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
+            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+        <span>${imgObj.title || "图片"} 加载中…（第 ${idx + 1} 张）</span>
+      `;
+    }
+    return wrap;
+  };
 
   // 2. 自定义渲染节点
   const customRender = (imgObj: ImageObj, idx: number) => {
-    console.log('🎉-----idx-----', idx);
-    console.log('🍭-----imgObj-----', imgObj);
+
+
     const box = document.createElement("div");
     box.id = `custom-render-${idx}`;
     box.style.display = "flex";
@@ -85,32 +107,35 @@ const init = async () => {
           }</div>
         `;
     }
-   
+
     return box;
   };
 
   // 3. 自定义右侧信息面板渲染
   const infoRender = (imgObj: ImageObj, idx: number): HTMLElement => {
-    const wrap = document.createElement('div');
+    const wrap = document.createElement("div");
     wrap.id = `custom-info-${idx}`;
-    wrap.style.padding = '8px 0';
+    wrap.style.padding = "8px 0";
     wrap.innerHTML = `
       <div style="font-weight:600;margin-bottom:8px;">自定义信息</div>
-      <div><b>标题：</b>${imgObj.title || '-'}</div>
-      <div><b>类型：</b>${imgObj.type || 'image'}</div>
-      <div><b>源地址：</b><a href="${imgObj.src}" target="_blank" style="color:#60a5fa;">打开</a></div>
+      <div><b>标题：</b>${imgObj.title || "-"}</div>
+      <div><b>类型：</b>${imgObj.type || "image"}</div>
+      <div><b>源地址：</b><a href="${
+        imgObj.src
+      }" target="_blank" style="color:#60a5fa;">打开</a></div>
       <div style="margin-top:8px;"><b>缩放：</b><span id="info-scale-${idx}">100%</span></div>
     `;
     return wrap;
   };
-  
+
   await nextTick();
   viewer.value = new ViewerPro({
+    // 使用按图片/索引的动态 loading
     loadingNode: customLoading,
     renderNode: customRender,
-  infoRender,
+    infoRender,
     onImageLoad: (imgObj: ImageObj, idx: number) => {
-      console.log("图片加载完成:", imgObj, idx);
+
       if (imgObj.type !== "live-photo") return;
       const demoSource = {
         photoSrc: imgObj.photoSrc || "",
@@ -135,9 +160,11 @@ const init = async () => {
         },
       });
     },
-  onTransformChange: ({ scale, translateX, translateY, index }) => {
+    onTransformChange: ({ scale, translateX, translateY, index }) => {
       // 让自定义 render 的根节点跟随缩放/位移
-      const el = document.getElementById(`custom-render-${index}`) as HTMLElement | null;
+      const el = document.getElementById(
+        `custom-render-${index}`
+      ) as HTMLElement | null;
       if (!el) return;
       // 使用 rAF 保持流畅
       requestAnimationFrame(() => {
@@ -147,7 +174,6 @@ const init = async () => {
       const scaleEl = document.getElementById(`info-scale-${index}`);
       if (scaleEl) scaleEl.textContent = `${Math.round(scale * 100)}%`;
     },
-    
   });
   viewer.value.addImages(images);
   viewer.value.init();

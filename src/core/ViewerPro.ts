@@ -30,7 +30,11 @@ export interface ImageObj {
 }
 
 export interface ViewerProOptions {
-  loadingNode?: HTMLElement | (() => HTMLElement);
+  // 支持：固定节点 | 无参工厂 | 按图片/索引生成的工厂
+  loadingNode?:
+    | HTMLElement
+    | (() => HTMLElement)
+    | ((imgObj: ImageObj, idx: number) => HTMLElement);
   images?: ImageObj[];
   renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
   onImageLoad?: (imgObj: ImageObj, idx: number) => void;
@@ -79,7 +83,11 @@ export class ViewerPro {
   private bottomCenterControls!: HTMLElement;
   private miniPrevBtn!: HTMLButtonElement;
   private miniNextBtn!: HTMLButtonElement;
-  private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
+  private customLoadingNode:
+    | HTMLElement
+    | (() => HTMLElement)
+    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | null;
   private customRenderNode:
     | HTMLElement
     | ((imgObj: ImageObj, idx: number) => HTMLElement)
@@ -491,7 +499,7 @@ export class ViewerPro {
 
   private updatePreview() {
     const currentImage = this.images[this.currentIndex];
-    this.showLoading();
+  this.showLoading(currentImage, this.currentIndex);
     this.errorMessage.style.display = "none";
     this.previewImage.style.display = "none";
     this.previewTitle.textContent = currentImage.title || "图片预览";
@@ -525,12 +533,37 @@ export class ViewerPro {
           } catch {}
           this.previewImage.src = "";
         }
-        this.hideProgress();
-        this.hideLoading();
+        // 在自定义渲染模式下：保留 loading，直到 onImageLoad 执行完毕后再隐藏
         this.errorMessage.style.display = "none";
-        if (this.onImageLoad) this.onImageLoad(currentImage, this.currentIndex);
-  this.updateThumbnails();
-  this.setInfoPanelContent(currentImage, this.currentIndex);
+        let maybePromise: any = null;
+        if (this.onImageLoad) {
+          try {
+            maybePromise = this.onImageLoad(
+              currentImage,
+              this.currentIndex
+            );
+          } catch (e) {
+            console.warn("onImageLoad 执行出错:", e);
+          }
+        }
+        this.updateThumbnails();
+        this.setInfoPanelContent(currentImage, this.currentIndex);
+        // 自定义渲染不使用网络下载进度
+        this.hideProgress();
+        // 若 onImageLoad 返回 Promise，则等待后再隐藏 loading
+        if (maybePromise && typeof maybePromise.then === "function") {
+          try {
+            (maybePromise as Promise<any>).then(
+              () => this.hideLoading(),
+              () => this.hideLoading()
+            );
+          } catch {
+            this.hideLoading();
+          }
+        } else {
+          // 保证 loading 至少渲染一帧
+          requestAnimationFrame(() => requestAnimationFrame(() => this.hideLoading()));
+        }
         // 复位拖拽/缩放状态
         this.resetZoom();
         return;
@@ -659,23 +692,46 @@ export class ViewerPro {
     }
   }
 
-  private showLoading() {
+  private showLoading(img?: ImageObj, idx?: number) {
     this.loadingIndicator.innerHTML = "";
     this.loadingIndicator.style.display = "flex";
     if (this.customLoadingNode) {
-      if (typeof this.customLoadingNode === "function") {
-        const node = this.customLoadingNode();
+      try {
+        let node: unknown;
+        const ln = this.customLoadingNode as
+          | HTMLElement
+          | (() => HTMLElement)
+          | ((imgObj: ImageObj, idx: number) => HTMLElement);
+
+        if (ln instanceof HTMLElement) {
+          // 避免多次 append 移动原节点，使用深拷贝
+          node = ln.cloneNode(true) as HTMLElement;
+        } else if (typeof ln === "function") {
+          // 根据函数形参长度，兼容无参与 (img, idx)
+          const arity = (ln as Function).length;
+          if (arity >= 2) {
+            const i = img ?? this.images[this.currentIndex];
+            const k = idx ?? this.currentIndex;
+            node = (ln as (imgObj: ImageObj, idx: number) => HTMLElement)(
+              i,
+              k
+            );
+          } else {
+            node = (ln as () => HTMLElement)();
+          }
+        }
         if (node instanceof HTMLElement) {
           this.loadingIndicator.appendChild(node);
+          return;
         }
-      } else if (this.customLoadingNode instanceof HTMLElement) {
-        this.loadingIndicator.appendChild(this.customLoadingNode);
+      } catch (e) {
+        console.warn("loadingNode 生成失败:", e);
       }
-    } else {
-      const div = document.createElement("div");
-      div.className = "image-loading";
-      this.loadingIndicator.appendChild(div);
     }
+    // 回退默认 loading
+    const div = document.createElement("div");
+    div.className = "image-loading";
+    this.loadingIndicator.appendChild(div);
   }
 
   private hideLoading() {
