@@ -1,1 +1,2 @@
-export { ViewerPro, type ViewerProOptions } from './core/ViewerPro';
+export { ViewerPro } from './core/ViewerPro';
+export type { ViewerProOptions, ImageObj } from './core/types';
