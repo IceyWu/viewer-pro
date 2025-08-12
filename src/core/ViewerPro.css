@@ -573,8 +573,9 @@
 }
 .arrow-btn {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 120px; /* 位于缩略图上方，与主区域 padding 保持一致 */
+  top: auto;
+  transform: none;
   width: 48px;
   height: 48px;
   background: rgba(30, 40, 60, 0.65);
@@ -585,7 +586,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 21;
+  z-index: 32; /* 高于缩略图条(30) */
   font-size: 0;
   box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
   transition: background 0.2s, transform 0.2s;
@@ -594,18 +595,18 @@
 }
 .arrow-btn:hover {
   background: rgba(30, 40, 60, 0.85);
-  transform: translateY(-50%) scale(1.05);
+  transform: scale(1.05);
 }
 .arrow-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  transform: translateY(-50%);
+  transform: none;
 }
 .left-arrow {
-  left: 24px;
+  left: calc(50% - 56px);
 }
 .right-arrow {
-  right: 24px;
+  left: calc(50% + 8px);
 }
 .corner-tools {
   position: absolute;
