@@ -88,11 +88,27 @@ const init = async () => {
    
     return box;
   };
+
+  // 3. 自定义右侧信息面板渲染
+  const infoRender = (imgObj: ImageObj, idx: number): HTMLElement => {
+    const wrap = document.createElement('div');
+    wrap.id = `custom-info-${idx}`;
+    wrap.style.padding = '8px 0';
+    wrap.innerHTML = `
+      <div style="font-weight:600;margin-bottom:8px;">自定义信息</div>
+      <div><b>标题：</b>${imgObj.title || '-'}</div>
+      <div><b>类型：</b>${imgObj.type || 'image'}</div>
+      <div><b>源地址：</b><a href="${imgObj.src}" target="_blank" style="color:#60a5fa;">打开</a></div>
+      <div style="margin-top:8px;"><b>缩放：</b><span id="info-scale-${idx}">100%</span></div>
+    `;
+    return wrap;
+  };
   
   await nextTick();
   viewer.value = new ViewerPro({
     loadingNode: customLoading,
     renderNode: customRender,
+  infoRender,
     onImageLoad: (imgObj: ImageObj, idx: number) => {
       console.log("图片加载完成:", imgObj, idx);
       if (imgObj.type !== "live-photo") return;
@@ -127,6 +143,9 @@ const init = async () => {
       requestAnimationFrame(() => {
         el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
       });
+      // 同步右侧信息面板中的缩放显示
+      const scaleEl = document.getElementById(`info-scale-${index}`);
+      if (scaleEl) scaleEl.textContent = `${Math.round(scale * 100)}%`;
     },
     
   });

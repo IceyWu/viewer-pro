@@ -42,6 +42,8 @@ export interface ViewerProOptions {
     index: number;
     image: ImageObj | null;
   }) => void;
+  // 自定义右侧信息面板渲染
+  infoRender?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
 }
 
 export class ViewerPro {
@@ -79,6 +81,10 @@ export class ViewerPro {
   private miniNextBtn!: HTMLButtonElement;
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
   private customRenderNode:
+    | HTMLElement
+    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | null;
+  private customInfoRender:
     | HTMLElement
     | ((imgObj: ImageObj, idx: number) => HTMLElement)
     | null;
@@ -120,6 +126,7 @@ export class ViewerPro {
     this.images = Array.isArray(options.images) ? options.images : [];
     this.customLoadingNode = options.loadingNode || null;
     this.customRenderNode = options.renderNode || null;
+  this.customInfoRender = options.infoRender || null;
     this.onImageLoad =
       typeof options.onImageLoad === "function" ? options.onImageLoad : null;
     this.onTransformChangeCb =
@@ -193,7 +200,7 @@ export class ViewerPro {
         <!-- 右侧信息弹窗（灵感板/AI Assistant 风格） -->
         <div class="info-modal" id="imageInfoPanel">
           <button class="info-modal-close" id="infoCollapseBtn">${closeIcon}</button>
-          <div class="info-modal-header">AI Assistant</div>
+          <div class="info-modal-header">信息面板</div>
           <div class="info-panel-content" id="infoPanelContent"></div>
         </div>
       </div>
@@ -522,8 +529,8 @@ export class ViewerPro {
         this.hideLoading();
         this.errorMessage.style.display = "none";
         if (this.onImageLoad) this.onImageLoad(currentImage, this.currentIndex);
-        this.updateThumbnails();
-        this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
+  this.updateThumbnails();
+  this.setInfoPanelContent(currentImage, this.currentIndex);
         // 复位拖拽/缩放状态
         this.resetZoom();
         return;
@@ -576,8 +583,8 @@ export class ViewerPro {
       if (this.onImageLoad) {
         this.onImageLoad(currentImage, this.currentIndex);
       }
-      this.updateThumbnails();
-      this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
+  this.updateThumbnails();
+  this.setInfoPanelContent(currentImage, this.currentIndex);
     };
 
     xhr.onerror = () => {
@@ -617,6 +624,39 @@ export class ViewerPro {
     this.hideLoading();
     this.errorMessage.style.display = "block";
     this.errorMessage.textContent = "图片加载失败，请检查网络连接或图片地址";
+  }
+
+  // 使用自定义渲染器填充信息面板
+  private setInfoPanelContent(img: ImageObj, idx: number) {
+    // 清空旧内容
+    this.infoPanelContent.innerHTML = "";
+    const node = this.createInfoNode(img, idx);
+    if (node) {
+      node.classList.add("custom-info-node");
+      try {
+        (node as HTMLElement).style.maxHeight = "100%";
+        (node as HTMLElement).style.overflow = "auto";
+      } catch {}
+      this.infoPanelContent.appendChild(node);
+    } else {
+      // 回退默认渲染
+      this.infoPanelContent.innerHTML = this.renderImageInfo(img);
+    }
+  }
+
+  private createInfoNode(img: ImageObj, idx: number): HTMLElement | null {
+    try {
+      if (!this.customInfoRender) return null;
+      const ir = this.customInfoRender;
+      if (typeof ir === "function") {
+        const el = ir(img, idx);
+        return el instanceof HTMLElement ? el : null;
+      }
+      return ir.cloneNode(true) as HTMLElement;
+    } catch (e) {
+      console.warn("infoRender 生成失败:", e);
+      return null;
+    }
   }
 
   private showLoading() {
