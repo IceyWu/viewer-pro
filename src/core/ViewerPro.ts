@@ -396,8 +396,14 @@ class WebGLImageViewerEngine {
     return shader;
   }
 
-  async loadImage(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<void> {
-    const image = await this.loadImageElement(url, progressCallback);
+  async loadImage(url: string, progressCallback?: (loaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
+    const image = await this.loadImageElement(url, progressCallback, abortSignal);
+    
+    // 检查是否已取消
+    if (abortSignal?.aborted) {
+      throw new Error('Image loading was cancelled');
+    }
+    
     this.imageWidth = image.width;
     this.imageHeight = image.height;
     this.createTexture(image);
@@ -413,13 +419,20 @@ class WebGLImageViewerEngine {
     this.render();
   }
 
-  private loadImageElement(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<HTMLImageElement> {
+  private loadImageElement(url: string, progressCallback?: (loaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<HTMLImageElement> {
     return new Promise(async (resolve, reject) => {
+      // 检查是否已取消
+      if (abortSignal?.aborted) {
+        reject(new Error('Image loading was cancelled'));
+        return;
+      }
+
       // 首先尝试使用 fetch 获取进度信息
       try {
         const response = await fetch(url, {
           mode: 'cors',
-          credentials: 'omit'
+          credentials: 'omit',
+          signal: abortSignal
         });
         
         if (!response.ok) {
@@ -438,6 +451,13 @@ class WebGLImageViewerEngine {
         const chunks: Uint8Array[] = [];
 
         while (true) {
+          // 检查是否已取消
+          if (abortSignal?.aborted) {
+            reader.cancel();
+            reject(new Error('Image loading was cancelled'));
+            return;
+          }
+
           const { done, value } = await reader.read();
           
           if (done) break;
@@ -446,9 +466,15 @@ class WebGLImageViewerEngine {
           loaded += value.length;
           
           // 更新进度
-          if (total > 0 && progressCallback) {
+          if (total > 0 && progressCallback && !abortSignal?.aborted) {
             progressCallback(loaded, total);
           }
+        }
+
+        // 最终检查是否已取消
+        if (abortSignal?.aborted) {
+          reject(new Error('Image loading was cancelled'));
+          return;
         }
 
         // 合并所有 chunks
@@ -471,7 +497,19 @@ class WebGLImageViewerEngine {
           URL.revokeObjectURL(objectURL);
         };
 
+        // 如果已取消，立即清理并返回
+        if (abortSignal?.aborted) {
+          cleanup();
+          reject(new Error('Image loading was cancelled'));
+          return;
+        }
+
         image.onload = () => {
+          if (abortSignal?.aborted) {
+            cleanup();
+            reject(new Error('Image loading was cancelled'));
+            return;
+          }
           cleanup();
           console.log('Image loaded via fetch:', url);
           resolve(image);
@@ -479,28 +517,47 @@ class WebGLImageViewerEngine {
         
         image.onerror = () => {
           cleanup();
+          if (abortSignal?.aborted) {
+            reject(new Error('Image loading was cancelled'));
+            return;
+          }
           console.warn('Failed to load image via fetch, trying direct load:', url);
           // 如果 blob 方式失败，尝试直接加载
-          this.loadImageDirectly(url, progressCallback).then(resolve).catch(reject);
+          this.loadImageDirectly(url, progressCallback, abortSignal).then(resolve).catch(reject);
         };
         
         image.src = objectURL;
 
       } catch (error) {
+        if (abortSignal?.aborted) {
+          reject(new Error('Image loading was cancelled'));
+          return;
+        }
         console.warn('Fetch failed, trying direct image load:', error);
         // 如果 fetch 失败，尝试直接加载图片
-        this.loadImageDirectly(url, progressCallback).then(resolve).catch(reject);
+        this.loadImageDirectly(url, progressCallback, abortSignal).then(resolve).catch(reject);
       }
     });
   }
 
-  private loadImageDirectly(url: string, progressCallback?: (loaded: number, total: number) => void): Promise<HTMLImageElement> {
+  private loadImageDirectly(url: string, progressCallback?: (loaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
+      // 检查是否已取消
+      if (abortSignal?.aborted) {
+        reject(new Error('Image loading was cancelled'));
+        return;
+      }
+
       const image = new Image();
       
       // 尝试不同的 crossOrigin 设置
       const tryLoad = (crossOriginSetting: string | null) => {
         return new Promise<HTMLImageElement>((resolveLoad, rejectLoad) => {
+          if (abortSignal?.aborted) {
+            rejectLoad(new Error('Image loading was cancelled'));
+            return;
+          }
+
           if (crossOriginSetting) {
             image.crossOrigin = crossOriginSetting;
           }
@@ -511,11 +568,16 @@ class WebGLImageViewerEngine {
           };
 
           image.onload = () => {
+            if (abortSignal?.aborted) {
+              cleanup();
+              rejectLoad(new Error('Image loading was cancelled'));
+              return;
+            }
             cleanup();
             console.log(`Image loaded directly with crossOrigin=${crossOriginSetting}:`, url);
             
             // 模拟进度完成
-            if (progressCallback) {
+            if (progressCallback && !abortSignal?.aborted) {
               progressCallback(100, 100);
             }
             
@@ -524,6 +586,10 @@ class WebGLImageViewerEngine {
           
           image.onerror = () => {
             cleanup();
+            if (abortSignal?.aborted) {
+              rejectLoad(new Error('Image loading was cancelled'));
+              return;
+            }
             rejectLoad(new Error(`Failed to load image with crossOrigin=${crossOriginSetting}`));
           };
           
@@ -717,10 +783,23 @@ class WebGLImageViewerEngine {
       return;
     }
 
-    const scaledWidth = this.imageWidth * this.scale;
-    const scaledHeight = this.imageHeight * this.scale;
-    const maxTranslateX = Math.max(0, (scaledWidth - this.canvasWidth) / 2);
-    const maxTranslateY = Math.max(0, (scaledHeight - this.canvasHeight) / 2);
+    // 计算纵横比调整
+    const imageAspect = this.imageWidth / this.imageHeight;
+    const canvasAspect = this.canvasWidth / this.canvasHeight;
+    
+    // 根据当前缩放计算图片在NDC空间中的实际尺寸
+    let effectiveScaleX = this.scale;
+    let effectiveScaleY = this.scale;
+    
+    if (imageAspect > canvasAspect) {
+      effectiveScaleY = this.scale * (canvasAspect / imageAspect);
+    } else {
+      effectiveScaleX = this.scale * (imageAspect / canvasAspect);
+    }
+    
+    // 计算允许的最大平移范围（NDC空间中的单位）
+    const maxTranslateX = Math.max(0, (effectiveScaleX - 1) * this.canvasWidth / 2);
+    const maxTranslateY = Math.max(0, (effectiveScaleY - 1) * this.canvasHeight / 2);
 
     this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
     this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
@@ -924,9 +1003,34 @@ class WebGLImageViewerEngine {
     
     if (newScale === oldScale) return;
     
+    // 将canvas坐标转换为NDC坐标（-1到1）
+    const ndcX = (x / this.canvasWidth) * 2 - 1;
+    const ndcY = -((y / this.canvasHeight) * 2 - 1); // Y轴翻转
+    
+    // 计算缩放中心在当前图片空间中的位置
+    const imageAspect = this.imageWidth / this.imageHeight;
+    const canvasAspect = this.canvasWidth / this.canvasHeight;
+    
+    // 根据纵横比调整获取实际的图片坐标
+    let adjustedNdcX = ndcX;
+    let adjustedNdcY = ndcY;
+    
+    if (imageAspect > canvasAspect) {
+      // 图片比canvas更宽，Y方向有缩放调整
+      const scaleAdjustment = canvasAspect / imageAspect;
+      adjustedNdcY = ndcY / scaleAdjustment;
+    } else {
+      // 图片比canvas更高，X方向有缩放调整
+      const scaleAdjustment = imageAspect / canvasAspect;
+      adjustedNdcX = ndcX / scaleAdjustment;
+    }
+    
+    // 计算缩放变化
     const scaleChange = newScale / oldScale;
-    const newTranslateX = x - (x - this.translateX) * scaleChange;
-    const newTranslateY = y - (y - this.translateY) * scaleChange;
+    
+    // 计算新的平移值，使缩放中心保持不变
+    const newTranslateX = this.translateX + adjustedNdcX * (1 - scaleChange) * this.canvasWidth / 2;
+    const newTranslateY = this.translateY + adjustedNdcY * (1 - scaleChange) * this.canvasHeight / 2;
     
     if (animated) {
       this.startAnimation(newScale, newTranslateX, newTranslateY);
@@ -1026,6 +1130,11 @@ export class ViewerPro {
   private resizeTimeoutId: number | null = null;
   private lastRenderTime = 0;
   private canvasSizeCache: { width: number; height: number; timestamp: number } | null = null;
+
+  // 添加加载状态管理
+  private currentLoadingId: number = 0;
+  private currentAbortController: AbortController | null = null;
+  private isLoading = false;
 
   constructor(options: ViewerProOptions = {}) {
     this.webglOptions = { ...DEFAULT_CONFIG, ...options.webglOptions };
@@ -1208,6 +1317,14 @@ export class ViewerPro {
     
     this.isDestroyed = true;
     
+    // 取消所有正在进行的加载请求
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+      this.currentAbortController = null;
+    }
+    this.currentLoadingId++;
+    this.isLoading = false;
+    
     // 清理 WebGL 查看器
     if (this.webglViewer) {
       this.webglViewer.destroy();
@@ -1276,24 +1393,71 @@ export class ViewerPro {
       return;
     }
 
+    // 取消之前的加载请求
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
+
+    // 创建新的 AbortController 和加载ID
+    this.currentAbortController = new AbortController();
+    const loadingId = ++this.currentLoadingId;
+    
+    // 立即更新标题，给用户即时反馈
+    this.previewTitle.textContent = currentImage.title || '图片预览';
+    
+    // 如果有之前的加载，新的请求会覆盖它
+    this.isLoading = true;
+
     // 清理之前的状态
     this.cleanupPreviousState();
 
     // 显示加载状态
     this.showLoading();
-    this.previewTitle.textContent = currentImage.title || '图片预览';
 
     try {
+      // 检查是否仍然是当前请求
+      if (loadingId !== this.currentLoadingId || this.currentAbortController.signal.aborted) {
+        console.log('Load request cancelled, newer request in progress');
+        return;
+      }
+
       await this.setupCanvas();
-      await this.loadImageIntoViewer(currentImage.src);
+      
+      // 再次检查是否仍然是当前请求
+      if (loadingId !== this.currentLoadingId || this.currentAbortController.signal.aborted) {
+        console.log('Load request cancelled after canvas setup');
+        return;
+      }
+
+      await this.loadImageIntoViewer(currentImage.src, loadingId, this.currentAbortController.signal);
+      
+      // 最终检查是否仍然是当前请求
+      if (loadingId !== this.currentLoadingId || this.currentAbortController.signal.aborted) {
+        console.log('Load request cancelled after image load');
+        // 清理已加载但过期的webglViewer
+        if (this.webglViewer) {
+          this.webglViewer.destroy();
+          this.webglViewer = null;
+        }
+        return;
+      }
+
       // 图片加载成功后，确保 canvas 可见并隐藏加载指示器
       this.hideLoading();
+      this.isLoading = false;
     } catch (error) {
-      console.error('Failed to load image:', error);
-      this.showError(error);
+      // 只有当前请求才显示错误（忽略取消的请求）
+      if (loadingId === this.currentLoadingId && !this.currentAbortController.signal.aborted) {
+        console.error('Failed to load image:', error);
+        this.showError(error);
+        this.isLoading = false;
+      }
     }
 
-    this.updateNavigationButtons();
+    // 只有当前请求才更新导航按钮
+    if (loadingId === this.currentLoadingId && !this.currentAbortController.signal.aborted) {
+      this.updateNavigationButtons();
+    }
   }
 
   private cleanupPreviousState(): void {
@@ -1364,8 +1528,8 @@ export class ViewerPro {
     });
   }
 
-  private async loadImageIntoViewer(src: string): Promise<void> {
-    console.log('Loading image into viewer:', src);
+  private async loadImageIntoViewer(src: string, loadingId: number, abortSignal: AbortSignal): Promise<void> {
+    console.log('Loading image into viewer:', src, 'loadingId:', loadingId);
     
     // 预检查 WebGL 支持
     if (!this.isWebGLSupported()) {
@@ -1373,10 +1537,25 @@ export class ViewerPro {
     }
 
     try {
+      // 检查请求是否已过期或已取消
+      if (loadingId !== this.currentLoadingId || abortSignal.aborted) {
+        throw new Error('Load request cancelled');
+      }
+
       this.webglViewer = new WebGLImageViewerEngine(this.previewCanvas, this.webglOptions);
+      
       await this.webglViewer.loadImage(src, (loaded, total) => {
-        this.updateProgress(loaded, total);
-      });
+        // 只有当前请求才更新进度
+        if (loadingId === this.currentLoadingId && !abortSignal.aborted) {
+          this.updateProgress(loaded, total);
+        }
+      }, abortSignal);
+      
+      // 最终检查请求是否仍然有效
+      if (loadingId !== this.currentLoadingId || abortSignal.aborted) {
+        throw new Error('Load request cancelled after completion');
+      }
+
       console.log('Image loaded successfully into WebGL viewer');
     } catch (error) {
       console.error('Failed to load image into WebGL viewer:', error);
@@ -1486,6 +1665,7 @@ export class ViewerPro {
     const newIndex = this.currentIndex + direction;
     if (newIndex >= 0 && newIndex < this.images.length) {
       this.currentIndex = newIndex;
+      // 允许导航，但新的加载请求会自动取消之前的请求
       this.updatePreview();
     }
   }
