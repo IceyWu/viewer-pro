@@ -59,15 +59,18 @@ const init = async () => {
       `;
 
   // 2. 自定义渲染节点
-   const customRender = (imgObj, idx) => {
+  const customRender = (imgObj: ImageObj, idx: number) => {
     console.log('🎉-----idx-----', idx);
     console.log('🍭-----imgObj-----', imgObj);
     const box = document.createElement("div");
+    box.id = `custom-render-${idx}`;
     box.style.display = "flex";
     box.style.flexDirection = "column";
     box.style.alignItems = "center";
     box.style.justifyContent = "center";
     box.style.height = "100%";
+    box.style.transformOrigin = "center center";
+    box.style.willChange = "transform";
     if (imgObj.type === "live-photo") {
       box.innerHTML = `
         <div id="live-photo-container-${idx}"></div>
@@ -116,6 +119,16 @@ const init = async () => {
         },
       });
     },
+  onTransformChange: ({ scale, translateX, translateY, index }) => {
+      // 让自定义 render 的根节点跟随缩放/位移
+      const el = document.getElementById(`custom-render-${index}`) as HTMLElement | null;
+      if (!el) return;
+      // 使用 rAF 保持流畅
+      requestAnimationFrame(() => {
+        el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      });
+    },
+    
   });
   viewer.value.addImages(images);
   viewer.value.init();

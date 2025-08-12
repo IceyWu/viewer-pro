@@ -10,7 +10,7 @@ import {
   downloadIcon,
   infoIcon,
   gridIcon,
-} from './icons';
+} from "./icons";
 
 // Constants for better maintainability
 const ZOOM_STEP = 0.2;
@@ -34,6 +34,14 @@ export interface ViewerProOptions {
   images?: ImageObj[];
   renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
   onImageLoad?: (imgObj: ImageObj, idx: number) => void;
+  // 当缩放/位移/索引变化时回调（含 renderNode 模式）
+  onTransformChange?: (state: {
+    scale: number;
+    translateX: number;
+    translateY: number;
+    index: number;
+    image: ImageObj | null;
+  }) => void;
 }
 
 export class ViewerPro {
@@ -70,8 +78,20 @@ export class ViewerPro {
   private miniPrevBtn!: HTMLButtonElement;
   private miniNextBtn!: HTMLButtonElement;
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
-  private customRenderNode: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement) | null;
+  private customRenderNode:
+    | HTMLElement
+    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
+  private onTransformChangeCb:
+    | ((state: {
+        scale: number;
+        translateX: number;
+        translateY: number;
+        index: number;
+        image: ImageObj | null;
+      }) => void)
+    | null;
   private infoPanel!: HTMLElement; // 复用字段，但表现改为弹窗
   private infoCollapseBtn!: HTMLElement; // 弹窗关闭按钮
   private progressMask!: HTMLElement;
@@ -99,23 +119,28 @@ export class ViewerPro {
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
     this.customLoadingNode = options.loadingNode || null;
-  this.customRenderNode = options.renderNode || null;
-    this.onImageLoad = typeof options.onImageLoad === 'function' ? options.onImageLoad : null;
-    
+    this.customRenderNode = options.renderNode || null;
+    this.onImageLoad =
+      typeof options.onImageLoad === "function" ? options.onImageLoad : null;
+    this.onTransformChangeCb =
+      typeof options.onTransformChange === "function"
+        ? options.onTransformChange
+        : null;
+
     this.initializeContainer();
     this.initializeElements();
     this.bindMethods();
     this.bindEvents();
-    
+
     if (this.images.length > 0) {
       this.updateThumbnails();
     }
   }
 
   private initializeContainer() {
-    this.previewContainer = document.createElement('div');
-    this.previewContainer.className = 'image-preview-container';
-    this.previewContainer.id = 'imagePreview';
+    this.previewContainer = document.createElement("div");
+    this.previewContainer.className = "image-preview-container";
+    this.previewContainer.id = "imagePreview";
     document.body.appendChild(this.previewContainer);
     this.previewContainer.innerHTML = this.getContainerHTML();
   }
@@ -177,46 +202,102 @@ export class ViewerPro {
   }
 
   private initializeElements() {
-    this.previewImage = this.previewContainer.querySelector('#previewImage') as HTMLImageElement;
-    this.previewTitle = this.previewContainer.querySelector('#previewTitle')!;
-    this.closeButton = this.previewContainer.querySelector('#closePreview')!;
-    this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLButtonElement;
-    this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLButtonElement;
-  this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement | null;
-  this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement | null;
-  this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement | null;
-  this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement | null;
-  this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement | null;
-  this.toggleInfoBtn = this.previewContainer.querySelector('#toggleInfoPanelBtn') as HTMLButtonElement | null;
-  this.toggleThumbsBtn = this.previewContainer.querySelector('#toggleThumbnails') as HTMLButtonElement | null;
-  // 侧边栏元素
-  this.sideToolbar = this.previewContainer.querySelector('#sideToolbar') as HTMLElement;
-  this.sideZoomInBtn = this.previewContainer.querySelector('#sideZoomIn') as HTMLButtonElement;
-  this.sideZoomOutBtn = this.previewContainer.querySelector('#sideZoomOut') as HTMLButtonElement;
-  this.sideResetZoomBtn = this.previewContainer.querySelector('#sideResetZoom') as HTMLButtonElement;
-  this.sideFullscreenBtn = this.previewContainer.querySelector('#sideFullscreen') as HTMLButtonElement;
-  this.sideDownloadBtn = this.previewContainer.querySelector('#sideDownload') as HTMLButtonElement;
-  this.sideInfoBtn = this.previewContainer.querySelector('#sideInfoOpen') as HTMLButtonElement;
-  this.sideToggleThumbsBtn = this.previewContainer.querySelector('#sideToggleThumbnails') as HTMLButtonElement;
-  // 缩放滑杆
-  this.zoomSlider = this.previewContainer.querySelector('#zoomSlider') as HTMLInputElement;
-  this.zoomValueLabel = this.previewContainer.querySelector('#zoomValue') as HTMLElement;
-  // 底部迷你控制（已移除，不再查询）
-  this.bottomCenterControls = null as any;
-  this.miniPrevBtn = null as any;
-  this.miniNextBtn = null as any;
-  this.imageCounter = this.previewContainer.querySelector('#imageCounter');
-    this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
-    this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
-    this.thumbnailNav = this.previewContainer.querySelector('#thumbnailNav')!;
-    this.imageContainer = this.previewContainer.querySelector('#imageContainer')!;
-  this.infoPanel = this.previewContainer.querySelector('#imageInfoPanel')! as HTMLElement;
-  this.infoCollapseBtn = this.previewContainer.querySelector('#infoCollapseBtn')! as HTMLElement;
-    this.progressMask = this.previewContainer.querySelector('#imageProgressMask')! as HTMLElement;
-    this.progressText = this.previewContainer.querySelector('#progressText')! as HTMLElement;
-    this.progressPercent = this.previewContainer.querySelector('#progressPercent')! as HTMLElement;
-    this.progressSize = this.previewContainer.querySelector('#progressSize')! as HTMLElement;
-    this.infoPanelContent = this.previewContainer.querySelector('#infoPanelContent')! as HTMLElement;
+    this.previewImage = this.previewContainer.querySelector(
+      "#previewImage"
+    ) as HTMLImageElement;
+    this.previewTitle = this.previewContainer.querySelector("#previewTitle")!;
+    this.closeButton = this.previewContainer.querySelector("#closePreview")!;
+    this.prevButton = this.previewContainer.querySelector(
+      "#prevImage"
+    ) as HTMLButtonElement;
+    this.nextButton = this.previewContainer.querySelector(
+      "#nextImage"
+    ) as HTMLButtonElement;
+    this.zoomInButton = this.previewContainer.querySelector(
+      "#zoomIn"
+    ) as HTMLButtonElement | null;
+    this.zoomOutButton = this.previewContainer.querySelector(
+      "#zoomOut"
+    ) as HTMLButtonElement | null;
+    this.resetZoomButton = this.previewContainer.querySelector(
+      "#resetZoom"
+    ) as HTMLButtonElement | null;
+    this.fullscreenButton = this.previewContainer.querySelector(
+      "#toggleFullscreen"
+    ) as HTMLButtonElement | null;
+    this.downloadButton = this.previewContainer.querySelector(
+      "#downloadImage"
+    ) as HTMLButtonElement | null;
+    this.toggleInfoBtn = this.previewContainer.querySelector(
+      "#toggleInfoPanelBtn"
+    ) as HTMLButtonElement | null;
+    this.toggleThumbsBtn = this.previewContainer.querySelector(
+      "#toggleThumbnails"
+    ) as HTMLButtonElement | null;
+    // 侧边栏元素
+    this.sideToolbar = this.previewContainer.querySelector(
+      "#sideToolbar"
+    ) as HTMLElement;
+    this.sideZoomInBtn = this.previewContainer.querySelector(
+      "#sideZoomIn"
+    ) as HTMLButtonElement;
+    this.sideZoomOutBtn = this.previewContainer.querySelector(
+      "#sideZoomOut"
+    ) as HTMLButtonElement;
+    this.sideResetZoomBtn = this.previewContainer.querySelector(
+      "#sideResetZoom"
+    ) as HTMLButtonElement;
+    this.sideFullscreenBtn = this.previewContainer.querySelector(
+      "#sideFullscreen"
+    ) as HTMLButtonElement;
+    this.sideDownloadBtn = this.previewContainer.querySelector(
+      "#sideDownload"
+    ) as HTMLButtonElement;
+    this.sideInfoBtn = this.previewContainer.querySelector(
+      "#sideInfoOpen"
+    ) as HTMLButtonElement;
+    this.sideToggleThumbsBtn = this.previewContainer.querySelector(
+      "#sideToggleThumbnails"
+    ) as HTMLButtonElement;
+    // 缩放滑杆
+    this.zoomSlider = this.previewContainer.querySelector(
+      "#zoomSlider"
+    ) as HTMLInputElement;
+    this.zoomValueLabel = this.previewContainer.querySelector(
+      "#zoomValue"
+    ) as HTMLElement;
+    // 底部迷你控制（已移除，不再查询）
+    this.bottomCenterControls = null as any;
+    this.miniPrevBtn = null as any;
+    this.miniNextBtn = null as any;
+    this.imageCounter = this.previewContainer.querySelector("#imageCounter");
+    this.loadingIndicator =
+      this.previewContainer.querySelector("#loadingIndicator")!;
+    this.errorMessage = this.previewContainer.querySelector("#errorMessage")!;
+    this.thumbnailNav = this.previewContainer.querySelector("#thumbnailNav")!;
+    this.imageContainer =
+      this.previewContainer.querySelector("#imageContainer")!;
+    this.infoPanel = this.previewContainer.querySelector(
+      "#imageInfoPanel"
+    )! as HTMLElement;
+    this.infoCollapseBtn = this.previewContainer.querySelector(
+      "#infoCollapseBtn"
+    )! as HTMLElement;
+    this.progressMask = this.previewContainer.querySelector(
+      "#imageProgressMask"
+    )! as HTMLElement;
+    this.progressText = this.previewContainer.querySelector(
+      "#progressText"
+    )! as HTMLElement;
+    this.progressPercent = this.previewContainer.querySelector(
+      "#progressPercent"
+    )! as HTMLElement;
+    this.progressSize = this.previewContainer.querySelector(
+      "#progressSize"
+    )! as HTMLElement;
+    this.infoPanelContent = this.previewContainer.querySelector(
+      "#infoPanelContent"
+    )! as HTMLElement;
   }
 
   private bindMethods() {
@@ -230,65 +311,122 @@ export class ViewerPro {
   }
 
   private bindEvents() {
-    this.closeButton.addEventListener('click', () => this.close());
-  this.prevButton.addEventListener('click', () => this.navigate(-1));
-  this.nextButton.addEventListener('click', () => this.navigate(1));
-  if (this.zoomInButton) this.zoomInButton.addEventListener('click', () => this.zoom(ZOOM_STEP));
-  if (this.zoomOutButton) this.zoomOutButton.addEventListener('click', () => this.zoom(-ZOOM_STEP));
-  if (this.resetZoomButton) this.resetZoomButton.addEventListener('click', () => this.resetZoom());
-  if (this.fullscreenButton) this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
-  if (this.downloadButton) this.downloadButton.addEventListener('click', () => this.downloadCurrentImage());
-  if (this.toggleInfoBtn) this.toggleInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
-  if (this.toggleThumbsBtn) this.toggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
+    this.closeButton.addEventListener("click", () => this.close());
+    this.prevButton.addEventListener("click", () => this.navigate(-1));
+    this.nextButton.addEventListener("click", () => this.navigate(1));
+    if (this.zoomInButton)
+      this.zoomInButton.addEventListener("click", () => this.zoom(ZOOM_STEP));
+    if (this.zoomOutButton)
+      this.zoomOutButton.addEventListener("click", () => this.zoom(-ZOOM_STEP));
+    if (this.resetZoomButton)
+      this.resetZoomButton.addEventListener("click", () => this.resetZoom());
+    if (this.fullscreenButton)
+      this.fullscreenButton.addEventListener("click", () =>
+        this.toggleFullscreen()
+      );
+    if (this.downloadButton)
+      this.downloadButton.addEventListener("click", () =>
+        this.downloadCurrentImage()
+      );
+    if (this.toggleInfoBtn)
+      this.toggleInfoBtn.addEventListener("click", () =>
+        this.toggleInfoPanel()
+      );
+    if (this.toggleThumbsBtn)
+      this.toggleThumbsBtn.addEventListener("click", () =>
+        this.toggleThumbnails()
+      );
     // 侧边栏事件
-    this.sideZoomInBtn.addEventListener('click', () => this.zoom(ZOOM_STEP));
-    this.sideZoomOutBtn.addEventListener('click', () => this.zoom(-ZOOM_STEP));
-    this.sideResetZoomBtn.addEventListener('click', () => this.resetZoom());
-    this.sideFullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
-    this.sideDownloadBtn.addEventListener('click', () => this.downloadCurrentImage());
-    this.sideInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
-    this.sideToggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
+    this.sideZoomInBtn.addEventListener("click", () => this.zoom(ZOOM_STEP));
+    this.sideZoomOutBtn.addEventListener("click", () => this.zoom(-ZOOM_STEP));
+    this.sideResetZoomBtn.addEventListener("click", () => this.resetZoom());
+    this.sideFullscreenBtn.addEventListener("click", () =>
+      this.toggleFullscreen()
+    );
+    this.sideDownloadBtn.addEventListener("click", () =>
+      this.downloadCurrentImage()
+    );
+    this.sideInfoBtn.addEventListener("click", () => this.toggleInfoPanel());
+    this.sideToggleThumbsBtn.addEventListener("click", () =>
+      this.toggleThumbnails()
+    );
     // 缩放滑杆
-    this.zoomSlider.addEventListener('input', () => {
+    this.zoomSlider.addEventListener("input", () => {
       const v = parseFloat(this.zoomSlider.value);
       this.scale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
       this.updateImageTransform();
     });
-  // 底部迷你控制已移除
-    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    this.previewImage.addEventListener('mousedown', (e) => this.startDrag(e));
-    this.previewImage.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
-    this.previewImage.addEventListener('wheel', this.throttle((e: WheelEvent) => {
-      e.preventDefault();
-      this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
-    }, 16));
-    this.previewContainer.addEventListener('click', (e) => {
+    // 底部迷你控制已移除
+    document.addEventListener("keydown", (e) => this.handleKeyDown(e));
+    // 将拖拽与缩放事件绑定到容器，兼容 renderNode 模式
+    this.imageContainer.addEventListener("mousedown", (e) => {
+      const target = e.target as HTMLElement;
+      if (!this.shouldStartDrag(target)) return;
+      this.startDrag(e);
+    });
+    this.imageContainer.addEventListener(
+      "touchstart",
+      (e) => {
+        const target = e.target as HTMLElement;
+        if (!this.shouldStartDrag(target)) return;
+        if (e.touches && e.touches[0]) this.startDrag(e.touches[0]);
+      },
+      { passive: true }
+    );
+    this.imageContainer.addEventListener(
+      "wheel",
+      this.throttle((e: WheelEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest("#zoomSliderWrap")) return; // 让滑杆自身处理滚轮
+        e.preventDefault();
+        this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
+      }, 16)
+    );
+    this.previewContainer.addEventListener("click", (e) => {
       if (e.target === this.previewContainer) {
         this.close();
       }
     });
-  this.previewImage.addEventListener('dblclick', () => this.resetZoom());
-  // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
-  this.infoCollapseBtn.addEventListener('click', (evt) => {
-    evt.stopPropagation();
-    this.closeInfoPanel();
-  });
+    this.imageContainer.addEventListener("dblclick", (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("#zoomSliderWrap")) return;
+      this.resetZoom();
+    });
+    // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
+    this.infoCollapseBtn.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      this.closeInfoPanel();
+    });
   }
 
-  private throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
+  // 判断是否应开始拖拽：排除交互控件，仅对图片或自定义节点生效
+  private shouldStartDrag(target: HTMLElement): boolean {
+    if (
+      target.closest("#zoomSliderWrap, .arrow-btn, .info-modal, .side-toolbar")
+    )
+      return false;
+    return !!target.closest(
+      "#previewImage, .custom-render-node, #imageContainer"
+    );
+  }
+
+  private throttle<T extends (...args: any[]) => any>(
+    func: T,
+    limit: number
+  ): T {
     let inThrottle: boolean;
     return ((...args: Parameters<T>) => {
       if (!inThrottle) {
         func.apply(this, args);
         inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
+        setTimeout(() => (inThrottle = false), limit);
       }
     }) as T;
   }
 
   public init() {
-    document.querySelectorAll('.image-grid-item').forEach((item, index) => {
-      item.addEventListener('click', () => this.open(index));
+    document.querySelectorAll(".image-grid-item").forEach((item, index) => {
+      item.addEventListener("click", () => this.open(index));
     });
   }
 
@@ -300,21 +438,25 @@ export class ViewerPro {
   private updateThumbnails() {
     // 如果 thumbnailNav 还没有内容，首次渲染
     if (this.thumbnailNav.childNodes.length !== this.images.length) {
-      this.thumbnailNav.innerHTML = '';
+      this.thumbnailNav.innerHTML = "";
       this.images.forEach((image, index) => {
-        const thumbnail = document.createElement('div');
-        thumbnail.className = `thumbnail${index === this.currentIndex ? ' active' : ''}`;
-        thumbnail.innerHTML = `<img src="${image.thumbnail || image.src}" alt="${image.title}">`;
-        thumbnail.addEventListener('click', () => this.open(index));
+        const thumbnail = document.createElement("div");
+        thumbnail.className = `thumbnail${
+          index === this.currentIndex ? " active" : ""
+        }`;
+        thumbnail.innerHTML = `<img src="${
+          image.thumbnail || image.src
+        }" alt="${image.title}">`;
+        thumbnail.addEventListener("click", () => this.open(index));
         this.thumbnailNav.appendChild(thumbnail);
       });
     } else {
       // 只更新 active 状态
       Array.from(this.thumbnailNav.children).forEach((node, idx) => {
         if (idx === this.currentIndex) {
-          node.classList.add('active');
+          node.classList.add("active");
         } else {
-          node.classList.remove('active');
+          node.classList.remove("active");
         }
       });
     }
@@ -328,13 +470,13 @@ export class ViewerPro {
     this.translateY = 0;
     this.updateThumbnails(); // 先切换缩略图高亮
     this.updatePreview();
-    this.previewContainer.classList.add('active');
-    document.body.style.overflow = 'hidden';
+    this.previewContainer.classList.add("active");
+    document.body.style.overflow = "hidden";
   }
 
   public close() {
-    this.previewContainer.classList.remove('active');
-    document.body.style.overflow = '';
+    this.previewContainer.classList.remove("active");
+    document.body.style.overflow = "";
     if (this.isFullscreen) {
       this.toggleFullscreen();
     }
@@ -343,34 +485,42 @@ export class ViewerPro {
   private updatePreview() {
     const currentImage = this.images[this.currentIndex];
     this.showLoading();
-    this.errorMessage.style.display = 'none';
-    this.previewImage.style.display = 'none';
-    this.previewTitle.textContent = currentImage.title || '图片预览';
-    if (this.imageCounter) this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
+    this.errorMessage.style.display = "none";
+    this.previewImage.style.display = "none";
+    this.previewTitle.textContent = currentImage.title || "图片预览";
+    if (this.imageCounter)
+      this.imageCounter.textContent = `${this.currentIndex + 1} / ${
+        this.images.length
+      }`;
     this.showProgress(0, 0, 0);
 
     // 如果提供了自定义渲染节点，优先使用并跳过图片加载
     if (this.customRenderNode) {
-      const oldNode = this.imageContainer.querySelector('.custom-render-node');
+      const oldNode = this.imageContainer.querySelector(".custom-render-node");
       if (oldNode) oldNode.remove();
 
       const node = this.createCustomNode(currentImage, this.currentIndex);
       if (node) {
-        node.classList.add('custom-render-node');
+        node.classList.add("custom-render-node");
         // 基本尺寸以适配容器
         try {
-          (node as HTMLElement).style.width = '100%';
-          (node as HTMLElement).style.height = '100%';
+          (node as HTMLElement).style.width = "100%";
+          (node as HTMLElement).style.height = "100%";
         } catch {}
         this.imageContainer.appendChild(node);
         // 若之前存在 blob 图片，进行清理
-        if (this.previewImage.src && this.previewImage.src.startsWith('blob:')) {
-          try { URL.revokeObjectURL(this.previewImage.src); } catch {}
-          this.previewImage.src = '';
+        if (
+          this.previewImage.src &&
+          this.previewImage.src.startsWith("blob:")
+        ) {
+          try {
+            URL.revokeObjectURL(this.previewImage.src);
+          } catch {}
+          this.previewImage.src = "";
         }
         this.hideProgress();
         this.hideLoading();
-        this.errorMessage.style.display = 'none';
+        this.errorMessage.style.display = "none";
         if (this.onImageLoad) this.onImageLoad(currentImage, this.currentIndex);
         this.updateThumbnails();
         this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
@@ -379,63 +529,67 @@ export class ViewerPro {
         return;
       }
     }
-    
+
     const xhr = new XMLHttpRequest();
     const thisToken = ++this.imageLoadToken;
-    xhr.open('GET', currentImage.src, true);
-    xhr.responseType = 'blob';
-    
+    xhr.open("GET", currentImage.src, true);
+    xhr.responseType = "blob";
+
     // 设置超时
     xhr.timeout = 30000; // 30秒超时
-    
+
     xhr.onprogress = (e) => {
       if (thisToken !== this.imageLoadToken) return;
       if (e.lengthComputable) {
         this.showProgress(e.loaded / e.total, e.loaded, e.total);
       }
     };
-    
+
     xhr.onload = () => {
       if (thisToken !== this.imageLoadToken) return;
       if (xhr.status === 200) {
         const blob = xhr.response;
         const url = URL.createObjectURL(blob);
-        
+
         // 清理之前的blob URL
-        if (this.previewImage.src.startsWith('blob:')) {
+        if (this.previewImage.src.startsWith("blob:")) {
           URL.revokeObjectURL(this.previewImage.src);
         }
-        
+
         this.previewImage.src = url;
-        this.previewImage.style.display = 'block';
+        this.previewImage.style.display = "block";
         this.hideProgress();
-        
-        const oldNode = this.imageContainer.querySelector('.custom-render-node');
+
+        const oldNode = this.imageContainer.querySelector(
+          ".custom-render-node"
+        );
         if (oldNode) oldNode.remove();
-        
-        this.previewImage = document.getElementById('previewImage') as HTMLImageElement;
+
+        this.previewImage = document.getElementById(
+          "previewImage"
+        ) as HTMLImageElement;
         this.updateImageTransform();
       } else {
         this.handleImageError();
       }
-      
+
       if (this.onImageLoad) {
         this.onImageLoad(currentImage, this.currentIndex);
       }
       this.updateThumbnails();
       this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
     };
-    
+
     xhr.onerror = () => {
       if (thisToken !== this.imageLoadToken) return;
       this.handleImageError();
     };
-    
+
     xhr.ontimeout = () => {
       if (thisToken !== this.imageLoadToken) return;
       this.handleImageError();
     };
-    
+
     xhr.send();
     this.prevButton.disabled = this.currentIndex === 0;
     this.nextButton.disabled = this.currentIndex === this.images.length - 1;
@@ -446,14 +600,14 @@ export class ViewerPro {
     try {
       if (!this.customRenderNode) return null;
       const rn = this.customRenderNode;
-      if (typeof rn === 'function') {
+      if (typeof rn === "function") {
         const el = rn(img, idx);
         return el instanceof HTMLElement ? el : null;
       }
       // 如果是固定元素，避免从原容器挪走，使用深拷贝
       return rn.cloneNode(true) as HTMLElement;
     } catch (e) {
-      console.warn('renderNode 生成失败:', e);
+      console.warn("renderNode 生成失败:", e);
       return null;
     }
   }
@@ -461,15 +615,15 @@ export class ViewerPro {
   private handleImageError() {
     this.hideProgress();
     this.hideLoading();
-    this.errorMessage.style.display = 'block';
-    this.errorMessage.textContent = '图片加载失败，请检查网络连接或图片地址';
+    this.errorMessage.style.display = "block";
+    this.errorMessage.textContent = "图片加载失败，请检查网络连接或图片地址";
   }
 
   private showLoading() {
-    this.loadingIndicator.innerHTML = '';
-    this.loadingIndicator.style.display = 'flex';
+    this.loadingIndicator.innerHTML = "";
+    this.loadingIndicator.style.display = "flex";
     if (this.customLoadingNode) {
-      if (typeof this.customLoadingNode === 'function') {
+      if (typeof this.customLoadingNode === "function") {
         const node = this.customLoadingNode();
         if (node instanceof HTMLElement) {
           this.loadingIndicator.appendChild(node);
@@ -478,15 +632,15 @@ export class ViewerPro {
         this.loadingIndicator.appendChild(this.customLoadingNode);
       }
     } else {
-      const div = document.createElement('div');
-      div.className = 'image-loading';
+      const div = document.createElement("div");
+      div.className = "image-loading";
       this.loadingIndicator.appendChild(div);
     }
   }
 
   private hideLoading() {
-    this.loadingIndicator.style.display = 'none';
-    this.loadingIndicator.innerHTML = '';
+    this.loadingIndicator.style.display = "none";
+    this.loadingIndicator.innerHTML = "";
   }
 
   private navigate(direction: number) {
@@ -519,50 +673,144 @@ export class ViewerPro {
     // 同步缩放 UI
     if (this.zoomSlider) {
       const v = Number(this.zoomSlider.value);
-      if (Math.abs(v - this.scale) > 0.001) this.zoomSlider.value = String(this.scale);
+      if (Math.abs(v - this.scale) > 0.001)
+        this.zoomSlider.value = String(this.scale);
     }
     if (this.zoomValueLabel) {
       this.zoomValueLabel.textContent = `${Math.round(this.scale * 100)}%`;
     }
-    const miniZoom = this.previewContainer.querySelector('#miniZoom') as HTMLElement;
+    const miniZoom = this.previewContainer.querySelector(
+      "#miniZoom"
+    ) as HTMLElement;
     if (miniZoom) miniZoom.textContent = `${Math.round(this.scale * 100)}%`;
+
+    // 根据缩放状态更新容器光标
+    if (this.imageContainer) {
+      this.imageContainer.style.cursor = this.scale > 1 ? "grab" : "default";
+    }
+
+    // 同步到外部（无论是否使用 renderNode）
+    this.syncTransformState();
+  }
+
+  // 将变换状态通过 dataset/CSS 变量/自定义事件/回调抛出
+  private syncTransformState() {
+    const state = {
+      scale: this.scale,
+      translateX: this.translateX,
+      translateY: this.translateY,
+      index: this.currentIndex,
+      image: this.images[this.currentIndex] || null,
+    };
+    // data-* 属性，方便外部读取
+    this.previewContainer.dataset.scale = String(this.scale);
+    this.previewContainer.dataset.tx = String(this.translateX);
+    this.previewContainer.dataset.ty = String(this.translateY);
+    this.previewContainer.dataset.index = String(this.currentIndex);
+    // CSS 变量，供外部样式或自定义节点使用
+    const host = this.imageContainer as HTMLElement;
+    host.style.setProperty("--vp-scale", String(this.scale));
+    host.style.setProperty("--vp-tx", `${this.translateX}px`);
+    host.style.setProperty("--vp-ty", `${this.translateY}px`);
+    // 自定义事件
+    const evt = new CustomEvent("viewerpro:transform", { detail: state });
+    this.previewContainer.dispatchEvent(evt);
+    // 回调
+    if (this.onTransformChangeCb) this.onTransformChangeCb(state);
+  }
+
+  // 外部可主动读取当前状态
+  public getState() {
+    return {
+      scale: this.scale,
+      translateX: this.translateX,
+      translateY: this.translateY,
+      index: this.currentIndex,
+      image: this.images[this.currentIndex] || null,
+    };
+  }
+
+  // 便捷订阅方法：接收 transform 变化，返回取消订阅函数
+  public onTransform(
+    listener: (state: {
+      scale: number;
+      translateX: number;
+      translateY: number;
+      index: number;
+      image: ImageObj | null;
+    }) => void
+  ) {
+    const handler = (e: Event) => listener((e as CustomEvent).detail);
+    this.previewContainer.addEventListener(
+      "viewerpro:transform",
+      handler as EventListener
+    );
+    return () =>
+      this.previewContainer.removeEventListener(
+        "viewerpro:transform",
+        handler as EventListener
+      );
   }
 
   private startDrag(e: MouseEvent | Touch) {
     if (this.scale <= 1) return;
-    if ('preventDefault' in e && typeof e.preventDefault === 'function') {
+    if ("preventDefault" in e && typeof e.preventDefault === "function") {
       e.preventDefault();
     }
     this.isDragging = true;
     this.startX = e.clientX - this.translateX;
     this.startY = e.clientY - this.translateY;
-    this.previewImage.style.cursor = 'grabbing';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', this._boundDrag);
-    document.addEventListener('mouseup', this._boundStopDrag);
-    document.addEventListener('touchmove', this._boundTouchDrag, { passive: false });
-    document.addEventListener('touchend', this._boundTouchEnd);
+    this.imageContainer.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", this._boundDrag);
+    document.addEventListener("mouseup", this._boundStopDrag);
+    document.addEventListener("touchmove", this._boundTouchDrag, {
+      passive: false,
+    });
+    document.addEventListener("touchend", this._boundTouchEnd);
   }
 
   private drag(e: MouseEvent | Touch) {
     if (!this.isDragging) return;
-    if ('preventDefault' in e && typeof e.preventDefault === 'function') {
+    if ("preventDefault" in e && typeof e.preventDefault === "function") {
       e.preventDefault();
     }
-    
+
     // Use requestAnimationFrame for smooth dragging
     requestAnimationFrame(() => {
       const containerRect = this.imageContainer.getBoundingClientRect();
       const imageRect = this.previewImage.getBoundingClientRect();
+      const customEl = this.imageContainer.querySelector(
+        ".custom-render-node"
+      ) as HTMLElement | null;
+      const contentRect = customEl
+        ? customEl.getBoundingClientRect()
+        : imageRect;
       this.translateX = e.clientX - this.startX;
       this.translateY = e.clientY - this.startY;
-      
-      // Constrain dragging within bounds
-      const maxTranslateX = Math.max(0, (imageRect.width * this.scale - containerRect.width) / 2);
-      const maxTranslateY = Math.max(0, (imageRect.height * this.scale - containerRect.height) / 2);
-      this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
-      this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
-      
+
+      // Constrain dragging within bounds（自定义渲染时使用自定义节点尺寸；若不可得则不约束）
+      const baseW = contentRect.width || 0;
+      const baseH = contentRect.height || 0;
+      if (baseW > 0 && baseH > 0) {
+        const maxTranslateX = Math.max(
+          0,
+          (baseW * this.scale - containerRect.width) / 2
+        );
+        const maxTranslateY = Math.max(
+          0,
+          (baseH * this.scale - containerRect.height) / 2
+        );
+        this.translateX = Math.max(
+          -maxTranslateX,
+          Math.min(maxTranslateX, this.translateX)
+        );
+        this.translateY = Math.max(
+          -maxTranslateY,
+          Math.min(maxTranslateY, this.translateY)
+        );
+      }
+
       this.updateImageTransform();
     });
   }
@@ -570,12 +818,16 @@ export class ViewerPro {
   private stopDrag() {
     if (!this.isDragging) return;
     this.isDragging = false;
-    this.previewImage.style.cursor = 'grab';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', this._boundDrag);
-    document.removeEventListener('mouseup', this._boundStopDrag);
-    document.removeEventListener('touchmove', this._boundTouchDrag as EventListener, false);
-    document.removeEventListener('touchend', this._boundTouchEnd);
+    this.imageContainer.style.cursor = this.scale > 1 ? "grab" : "default";
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", this._boundDrag);
+    document.removeEventListener("mouseup", this._boundStopDrag);
+    document.removeEventListener(
+      "touchmove",
+      this._boundTouchDrag as EventListener,
+      false
+    );
+    document.removeEventListener("touchend", this._boundTouchEnd);
   }
 
   // 全屏切换时切换图标
@@ -584,14 +836,18 @@ export class ViewerPro {
       this.previewContainer.requestFullscreen?.().catch((err) => {
         console.error(`全屏错误: ${err.message}`);
       });
-      if (this.fullscreenButton) this.fullscreenButton.innerHTML = fullscreenExitIcon;
-      if (this.sideFullscreenBtn) this.sideFullscreenBtn.innerHTML = fullscreenExitIcon;
+      if (this.fullscreenButton)
+        this.fullscreenButton.innerHTML = fullscreenExitIcon;
+      if (this.sideFullscreenBtn)
+        this.sideFullscreenBtn.innerHTML = fullscreenExitIcon;
       this.isFullscreen = true;
     } else {
       if (document.exitFullscreen) {
         document.exitFullscreen();
-        if (this.fullscreenButton) this.fullscreenButton.innerHTML = fullscreenIcon;
-        if (this.sideFullscreenBtn) this.sideFullscreenBtn.innerHTML = fullscreenIcon;
+        if (this.fullscreenButton)
+          this.fullscreenButton.innerHTML = fullscreenIcon;
+        if (this.sideFullscreenBtn)
+          this.sideFullscreenBtn.innerHTML = fullscreenIcon;
         this.isFullscreen = false;
       }
     }
@@ -599,45 +855,45 @@ export class ViewerPro {
 
   private downloadCurrentImage() {
     const currentImage = this.images[this.currentIndex];
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = currentImage.src;
-    link.download = currentImage.title || 'image';
+    link.download = currentImage.title || "image";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   }
 
   private handleKeyDown(e: KeyboardEvent) {
-    if (!this.previewContainer.classList.contains('active')) return;
+    if (!this.previewContainer.classList.contains("active")) return;
     switch (e.key) {
-      case 'Escape':
+      case "Escape":
         // 优先关闭信息弹窗
-        if (this.infoPanel.classList.contains('open')) {
+        if (this.infoPanel.classList.contains("open")) {
           this.closeInfoPanel();
         } else {
           this.close();
         }
         break;
-      case 'ArrowLeft':
+      case "ArrowLeft":
         this.navigate(-1);
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         this.navigate(1);
         break;
-      case '+':
-      case '=':
+      case "+":
+      case "=":
         this.zoom(ZOOM_STEP);
         break;
-      case '-':
+      case "-":
         this.zoom(-ZOOM_STEP);
         break;
-      case '0':
+      case "0":
         this.resetZoom();
         break;
-      case 'f':
+      case "f":
         this.toggleFullscreen();
         break;
-      case 'd':
+      case "d":
         this.downloadCurrentImage();
         break;
     }
@@ -658,7 +914,7 @@ export class ViewerPro {
 
   private toggleInfoPanel() {
     // 作为弹窗显示/隐藏
-    if (this.infoPanel.classList.contains('open')) {
+    if (this.infoPanel.classList.contains("open")) {
       this.closeInfoPanel();
     } else {
       this.openInfoPanel();
@@ -666,63 +922,81 @@ export class ViewerPro {
   }
 
   private openInfoPanel() {
-    this.infoPanel.classList.add('open');
-    this.infoPanel.setAttribute('aria-hidden', 'false');
+    this.infoPanel.classList.add("open");
+    this.infoPanel.setAttribute("aria-hidden", "false");
   }
 
   private closeInfoPanel() {
-    this.infoPanel.classList.remove('open');
-    this.infoPanel.setAttribute('aria-hidden', 'true');
+    this.infoPanel.classList.remove("open");
+    this.infoPanel.setAttribute("aria-hidden", "true");
   }
 
   private showProgress(percent: number, loaded: number, total: number) {
-    this.progressMask.style.display = 'flex';
-    this.progressText.textContent = '加载中';
+    this.progressMask.style.display = "flex";
+    this.progressText.textContent = "加载中";
     this.progressPercent.textContent = `${Math.round(percent * 100)}%`;
-    this.progressSize.textContent = `${(loaded / 1048576).toFixed(1)}MB / ${(total / 1048576).toFixed(1)}MB`;
+    this.progressSize.textContent = `${(loaded / 1048576).toFixed(1)}MB / ${(
+      total / 1048576
+    ).toFixed(1)}MB`;
     // 进度环动画
-    const circle = this.progressMask.querySelector('.progress-bar') as SVGCircleElement;
-    const r = 14, c = 2 * Math.PI * r;
+    const circle = this.progressMask.querySelector(
+      ".progress-bar"
+    ) as SVGCircleElement;
+    const r = 14,
+      c = 2 * Math.PI * r;
     circle.style.strokeDasharray = `${c}`;
     circle.style.strokeDashoffset = `${c * (1 - percent)}`;
   }
 
   private hideProgress() {
-    this.progressMask.style.display = 'none';
+    this.progressMask.style.display = "none";
   }
 
   // 缩略图抽屉开关（主要用于移动端）
   private toggleThumbnails() {
     if (!this.thumbnailNav) return;
-    this.thumbnailNav.classList.toggle('open');
+    this.thumbnailNav.classList.toggle("open");
   }
 
   // 新增：清理资源的方法
   public destroy() {
     // 清理事件监听器
-  this.closeButton.removeEventListener('click', () => this.close());
-  this.prevButton.removeEventListener('click', () => this.navigate(-1));
-  this.nextButton.removeEventListener('click', () => this.navigate(1));
-  if (this.zoomInButton) this.zoomInButton.removeEventListener('click', () => this.zoom(ZOOM_STEP));
-  if (this.zoomOutButton) this.zoomOutButton.removeEventListener('click', () => this.zoom(-ZOOM_STEP));
-  if (this.resetZoomButton) this.resetZoomButton.removeEventListener('click', () => this.resetZoom());
-  if (this.fullscreenButton) this.fullscreenButton.removeEventListener('click', () => this.toggleFullscreen());
-  if (this.downloadButton) this.downloadButton.removeEventListener('click', () => this.downloadCurrentImage());
-    document.removeEventListener('keydown', (e) => this.handleKeyDown(e));
-    
+    this.closeButton.removeEventListener("click", () => this.close());
+    this.prevButton.removeEventListener("click", () => this.navigate(-1));
+    this.nextButton.removeEventListener("click", () => this.navigate(1));
+    if (this.zoomInButton)
+      this.zoomInButton.removeEventListener("click", () =>
+        this.zoom(ZOOM_STEP)
+      );
+    if (this.zoomOutButton)
+      this.zoomOutButton.removeEventListener("click", () =>
+        this.zoom(-ZOOM_STEP)
+      );
+    if (this.resetZoomButton)
+      this.resetZoomButton.removeEventListener("click", () => this.resetZoom());
+    if (this.fullscreenButton)
+      this.fullscreenButton.removeEventListener("click", () =>
+        this.toggleFullscreen()
+      );
+    if (this.downloadButton)
+      this.downloadButton.removeEventListener("click", () =>
+        this.downloadCurrentImage()
+      );
+    document.removeEventListener("keydown", (e) => this.handleKeyDown(e));
+
     // 清理拖拽相关事件
     this.stopDrag();
-    
+
     // 从DOM中移除容器
     if (this.previewContainer && this.previewContainer.parentNode) {
       this.previewContainer.parentNode.removeChild(this.previewContainer);
     }
-    
+
     // 清理图片资源
-    if (this.previewImage.src.startsWith('blob:')) {
+    if (this.previewImage.src.startsWith("blob:")) {
       URL.revokeObjectURL(this.previewImage.src);
     }
-    
+
     // 重置状态
     this.images = [];
     this.currentIndex = 0;
