@@ -377,6 +377,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  z-index: 50;
 }
 /* 响应式调整 */
 @media (max-width: 768px) {

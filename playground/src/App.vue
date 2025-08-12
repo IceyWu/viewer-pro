@@ -2,6 +2,7 @@
 import { ref, onMounted, nextTick } from "vue";
 import { ViewerPro, type ImageObj } from "../../src/index";
 import "../../src/core/ViewerPro.css";
+import { LivePhotoViewer } from "live-photo";
 
 // 示例图片数据
 const images: ImageObj[] = [
@@ -58,29 +59,63 @@ const init = async () => {
       `;
 
   // 2. 自定义渲染节点
-  const customRender = (imgObj: ImageObj, _idx: number) => {
+   const customRender = (imgObj, idx) => {
+    console.log('🎉-----idx-----', idx);
+    console.log('🍭-----imgObj-----', imgObj);
     const box = document.createElement("div");
     box.style.display = "flex";
     box.style.flexDirection = "column";
     box.style.alignItems = "center";
     box.style.justifyContent = "center";
     box.style.height = "100%";
-    
-    box.innerHTML = `
-      <img src="${imgObj.src}" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
-      <div style="color:#fff;margin-top:8px;">自定义渲染：${imgObj.title || ""}</div>
-    `;
-
+    if (imgObj.type === "live-photo") {
+      box.innerHTML = `
+        <div id="live-photo-container-${idx}"></div>
+         `;
+    } else {
+      box.innerHTML = `
+          <img src="${
+            imgObj.src
+          }" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
+          <div style="color:#fff;margin-top:8px;">自定义渲染：${
+            imgObj.title || ""
+          }</div>
+        `;
+    }
+   
     return box;
   };
   
   await nextTick();
   viewer.value = new ViewerPro({
     loadingNode: customLoading,
-    // renderNode: customRender,
-    // onImageLoad: (imgObj: ImageObj, idx: number) => {
-    //   console.log("图片加载完成:", imgObj, idx);
-    // },
+    renderNode: customRender,
+    onImageLoad: (imgObj: ImageObj, idx: number) => {
+      console.log("图片加载完成:", imgObj, idx);
+      if (imgObj.type !== "live-photo") return;
+      const demoSource = {
+        photoSrc: imgObj.photoSrc || "",
+        videoSrc: imgObj.videoSrc || "",
+      };
+      const container = document.getElementById(`live-photo-container-${idx}`);
+      new LivePhotoViewer({
+        photoSrc: demoSource.photoSrc,
+        videoSrc: demoSource.videoSrc,
+        container: container,
+        width: 300,
+        height: 300,
+        imageCustomization: {
+          styles: {
+            objectFit: "cover",
+            borderRadius: "8px",
+          },
+          attributes: {
+            alt: "Live Photo Demo",
+            loading: "lazy",
+          },
+        },
+      });
+    },
   });
   viewer.value.addImages(images);
   viewer.value.init();

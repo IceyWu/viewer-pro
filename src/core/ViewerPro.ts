@@ -70,6 +70,7 @@ export class ViewerPro {
   private miniPrevBtn!: HTMLButtonElement;
   private miniNextBtn!: HTMLButtonElement;
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
+  private customRenderNode: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement) | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
   private infoPanel!: HTMLElement; // 复用字段，但表现改为弹窗
   private infoCollapseBtn!: HTMLElement; // 弹窗关闭按钮
@@ -98,6 +99,7 @@ export class ViewerPro {
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
     this.customLoadingNode = options.loadingNode || null;
+  this.customRenderNode = options.renderNode || null;
     this.onImageLoad = typeof options.onImageLoad === 'function' ? options.onImageLoad : null;
     
     this.initializeContainer();
@@ -266,7 +268,11 @@ export class ViewerPro {
       }
     });
   this.previewImage.addEventListener('dblclick', () => this.resetZoom());
-  this.infoCollapseBtn.addEventListener('click', () => this.toggleInfoPanel());
+  // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
+  this.infoCollapseBtn.addEventListener('click', (evt) => {
+    evt.stopPropagation();
+    this.closeInfoPanel();
+  });
   }
 
   private throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
@@ -340,8 +346,39 @@ export class ViewerPro {
     this.errorMessage.style.display = 'none';
     this.previewImage.style.display = 'none';
     this.previewTitle.textContent = currentImage.title || '图片预览';
-  if (this.imageCounter) this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
+    if (this.imageCounter) this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
     this.showProgress(0, 0, 0);
+
+    // 如果提供了自定义渲染节点，优先使用并跳过图片加载
+    if (this.customRenderNode) {
+      const oldNode = this.imageContainer.querySelector('.custom-render-node');
+      if (oldNode) oldNode.remove();
+
+      const node = this.createCustomNode(currentImage, this.currentIndex);
+      if (node) {
+        node.classList.add('custom-render-node');
+        // 基本尺寸以适配容器
+        try {
+          (node as HTMLElement).style.width = '100%';
+          (node as HTMLElement).style.height = '100%';
+        } catch {}
+        this.imageContainer.appendChild(node);
+        // 若之前存在 blob 图片，进行清理
+        if (this.previewImage.src && this.previewImage.src.startsWith('blob:')) {
+          try { URL.revokeObjectURL(this.previewImage.src); } catch {}
+          this.previewImage.src = '';
+        }
+        this.hideProgress();
+        this.hideLoading();
+        this.errorMessage.style.display = 'none';
+        if (this.onImageLoad) this.onImageLoad(currentImage, this.currentIndex);
+        this.updateThumbnails();
+        this.infoPanelContent.innerHTML = this.renderImageInfo(currentImage);
+        // 复位拖拽/缩放状态
+        this.resetZoom();
+        return;
+      }
+    }
     
     const xhr = new XMLHttpRequest();
     const thisToken = ++this.imageLoadToken;
@@ -402,6 +439,23 @@ export class ViewerPro {
     xhr.send();
     this.prevButton.disabled = this.currentIndex === 0;
     this.nextButton.disabled = this.currentIndex === this.images.length - 1;
+  }
+
+  // 根据 renderNode 选项创建节点
+  private createCustomNode(img: ImageObj, idx: number): HTMLElement | null {
+    try {
+      if (!this.customRenderNode) return null;
+      const rn = this.customRenderNode;
+      if (typeof rn === 'function') {
+        const el = rn(img, idx);
+        return el instanceof HTMLElement ? el : null;
+      }
+      // 如果是固定元素，避免从原容器挪走，使用深拷贝
+      return rn.cloneNode(true) as HTMLElement;
+    } catch (e) {
+      console.warn('renderNode 生成失败:', e);
+      return null;
+    }
   }
 
   private handleImageError() {
@@ -557,7 +611,12 @@ export class ViewerPro {
     if (!this.previewContainer.classList.contains('active')) return;
     switch (e.key) {
       case 'Escape':
-        this.close();
+        // 优先关闭信息弹窗
+        if (this.infoPanel.classList.contains('open')) {
+          this.closeInfoPanel();
+        } else {
+          this.close();
+        }
         break;
       case 'ArrowLeft':
         this.navigate(-1);
@@ -600,10 +659,20 @@ export class ViewerPro {
   private toggleInfoPanel() {
     // 作为弹窗显示/隐藏
     if (this.infoPanel.classList.contains('open')) {
-      this.infoPanel.classList.remove('open');
+      this.closeInfoPanel();
     } else {
-      this.infoPanel.classList.add('open');
+      this.openInfoPanel();
     }
+  }
+
+  private openInfoPanel() {
+    this.infoPanel.classList.add('open');
+    this.infoPanel.setAttribute('aria-hidden', 'false');
+  }
+
+  private closeInfoPanel() {
+    this.infoPanel.classList.remove('open');
+    this.infoPanel.setAttribute('aria-hidden', 'true');
   }
 
   private showProgress(percent: number, loaded: number, total: number) {
