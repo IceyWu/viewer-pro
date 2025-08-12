@@ -5,20 +5,20 @@ import "../../src/core/ViewerPro.css";
 
 // 示例图片数据
 const images: ImageObj[] = [
-  {
-    src: "https://picsum.photos/id/1015/1200/800",
+ {
+    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
     thumbnail: "https://picsum.photos/id/1015/400/300",
+    photoSrc:
+      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
+    videoSrc:
+      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160657.MOV",
     title: "自然风景",
+    type: "live-photo",
   },
   {
-    src: "https://picsum.photos/id/1018/1200/800",
-    thumbnail: "https://picsum.photos/id/1018/400/300",
-    title: "山脉与湖泊",
-  },
-  {
-    src: "https://picsum.photos/id/1019/1200/800",
-    thumbnail: "https://picsum.photos/id/1019/400/300",
-    title: "自然景观",
+    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    thumbnail: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    title: "自然风景",
   },
   {
     src: "https://picsum.photos/id/1039/1200/800",
