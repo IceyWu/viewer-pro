@@ -43,22 +43,36 @@ export class ViewerPro {
   private closeButton!: HTMLElement;
   private prevButton!: HTMLButtonElement;
   private nextButton!: HTMLButtonElement;
-  private zoomInButton!: HTMLButtonElement;
-  private zoomOutButton!: HTMLButtonElement;
-  private resetZoomButton!: HTMLButtonElement;
-  private fullscreenButton!: HTMLButtonElement;
-  private downloadButton!: HTMLButtonElement;
-  private imageCounter!: HTMLElement;
+  private zoomInButton!: HTMLButtonElement | null;
+  private zoomOutButton!: HTMLButtonElement | null;
+  private resetZoomButton!: HTMLButtonElement | null;
+  private fullscreenButton!: HTMLButtonElement | null;
+  private downloadButton!: HTMLButtonElement | null;
+  private imageCounter!: HTMLElement | null;
   private loadingIndicator!: HTMLElement;
   private errorMessage!: HTMLElement;
   private thumbnailNav!: HTMLElement;
   private imageContainer!: HTMLElement;
-  private toggleInfoBtn!: HTMLButtonElement;
-  private toggleThumbsBtn!: HTMLButtonElement;
+  private toggleInfoBtn!: HTMLButtonElement | null;
+  private toggleThumbsBtn!: HTMLButtonElement | null;
+  // 新增：侧边工具栏按钮 & 缩放滑杆等
+  private sideToolbar!: HTMLElement;
+  private sideZoomInBtn!: HTMLButtonElement;
+  private sideZoomOutBtn!: HTMLButtonElement;
+  private sideResetZoomBtn!: HTMLButtonElement;
+  private sideFullscreenBtn!: HTMLButtonElement;
+  private sideDownloadBtn!: HTMLButtonElement;
+  private sideInfoBtn!: HTMLButtonElement;
+  private sideToggleThumbsBtn!: HTMLButtonElement;
+  private zoomSlider!: HTMLInputElement;
+  private zoomValueLabel!: HTMLElement;
+  private bottomCenterControls!: HTMLElement;
+  private miniPrevBtn!: HTMLButtonElement;
+  private miniNextBtn!: HTMLButtonElement;
   private customLoadingNode: HTMLElement | (() => HTMLElement) | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
-  private infoPanel!: HTMLElement;
-  private infoCollapseBtn!: HTMLElement;
+  private infoPanel!: HTMLElement; // 复用字段，但表现改为弹窗
+  private infoCollapseBtn!: HTMLElement; // 弹窗关闭按钮
   private progressMask!: HTMLElement;
   private progressText!: HTMLElement;
   private progressPercent!: HTMLElement;
@@ -108,6 +122,19 @@ export class ViewerPro {
     return `
       <div class="image-preview-overlay"></div>
       <div class="image-preview-content">
+        <!-- 左侧竖向操作栏 -->
+        <div class="side-toolbar" id="sideToolbar">
+          <button class="control-button" id="sideToggleThumbnails" title="缩略图">${gridIcon}</button>
+          <div class="side-toolbar-sep"></div>
+          <button class="control-button" id="sideZoomOut" title="缩小">${zoomOutIcon}</button>
+          <button class="control-button" id="sideResetZoom" title="重置缩放">${resetZoomIcon}</button>
+          <button class="control-button" id="sideZoomIn" title="放大">${zoomInIcon}</button>
+          <div class="side-toolbar-sep"></div>
+          <button class="control-button" id="sideFullscreen" title="全屏">${fullscreenIcon}</button>
+          <button class="control-button" id="sideDownload" title="下载">${downloadIcon}</button>
+          <button class="control-button" id="sideInfoOpen" title="信息">${infoIcon}</button>
+        </div>
+
         <div class="image-preview-main-area">
           <div class="image-preview-header">
             <div class="image-preview-title" id="previewTitle">图片预览</div>
@@ -123,24 +150,23 @@ export class ViewerPro {
               图片加载失败
             </div>
             <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
-            <div class="corner-tools" id="cornerTools">
-              <button class="control-button" id="toggleThumbnails" title="缩略图">${gridIcon}</button>
-              <button class="control-button" id="zoomOut" title="缩小">${zoomOutIcon}</button>
-              <button class="control-button" id="resetZoom" title="重置缩放">${resetZoomIcon}</button>
-              <button class="control-button" id="zoomIn" title="放大">${zoomInIcon}</button>
-              <button class="control-button" id="toggleFullscreen" title="全屏">${fullscreenIcon}</button>
-              <button class="control-button" id="downloadImage" title="下载">${downloadIcon}</button>
-              <button class="control-button" id="toggleInfoPanelBtn" title="信息">${infoIcon}</button>
-              <span class="image-preview-counter" id="imageCounter">1 / 1</span>
+
+            <!-- 右侧垂直缩放滑杆 -->
+            <div class="zoom-slider" id="zoomSliderWrap">
+              <input type="range" id="zoomSlider" min="${ZOOM_MIN}" max="${ZOOM_MAX}" step="0.01" value="1" />
+              <div class="zoom-value" id="zoomValue">100%</div>
             </div>
+
           </div>
           <div class="image-progress-mask" id="imageProgressMask" style="display:none;">
             <div class="progress-ring"><svg width="32" height="32"><circle class="progress-bg" cx="16" cy="16" r="14" stroke-width="4" fill="none"/><circle class="progress-bar" cx="16" cy="16" r="14" stroke-width="4" fill="none"/></svg></div>
             <div class="progress-info"><div id="progressText">加载中</div><div id="progressPercent">0%</div><div id="progressSize">0MB / 0MB</div></div>
           </div>
         </div>
-        <div class="image-info-panel expanded" id="imageInfoPanel">
-          <div class="info-collapse-btn" id="infoCollapseBtn">&gt;</div>
+        <!-- 右侧信息弹窗（灵感板/AI Assistant 风格） -->
+        <div class="info-modal" id="imageInfoPanel">
+          <button class="info-modal-close" id="infoCollapseBtn">${closeIcon}</button>
+          <div class="info-modal-header">AI Assistant</div>
           <div class="info-panel-content" id="infoPanelContent"></div>
         </div>
       </div>
@@ -154,20 +180,36 @@ export class ViewerPro {
     this.closeButton = this.previewContainer.querySelector('#closePreview')!;
     this.prevButton = this.previewContainer.querySelector('#prevImage') as HTMLButtonElement;
     this.nextButton = this.previewContainer.querySelector('#nextImage') as HTMLButtonElement;
-    this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement;
-    this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement;
-    this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement;
-    this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement;
-    this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement;
-  this.toggleInfoBtn = this.previewContainer.querySelector('#toggleInfoPanelBtn') as HTMLButtonElement;
-  this.toggleThumbsBtn = this.previewContainer.querySelector('#toggleThumbnails') as HTMLButtonElement;
-    this.imageCounter = this.previewContainer.querySelector('#imageCounter')!;
+  this.zoomInButton = this.previewContainer.querySelector('#zoomIn') as HTMLButtonElement | null;
+  this.zoomOutButton = this.previewContainer.querySelector('#zoomOut') as HTMLButtonElement | null;
+  this.resetZoomButton = this.previewContainer.querySelector('#resetZoom') as HTMLButtonElement | null;
+  this.fullscreenButton = this.previewContainer.querySelector('#toggleFullscreen') as HTMLButtonElement | null;
+  this.downloadButton = this.previewContainer.querySelector('#downloadImage') as HTMLButtonElement | null;
+  this.toggleInfoBtn = this.previewContainer.querySelector('#toggleInfoPanelBtn') as HTMLButtonElement | null;
+  this.toggleThumbsBtn = this.previewContainer.querySelector('#toggleThumbnails') as HTMLButtonElement | null;
+  // 侧边栏元素
+  this.sideToolbar = this.previewContainer.querySelector('#sideToolbar') as HTMLElement;
+  this.sideZoomInBtn = this.previewContainer.querySelector('#sideZoomIn') as HTMLButtonElement;
+  this.sideZoomOutBtn = this.previewContainer.querySelector('#sideZoomOut') as HTMLButtonElement;
+  this.sideResetZoomBtn = this.previewContainer.querySelector('#sideResetZoom') as HTMLButtonElement;
+  this.sideFullscreenBtn = this.previewContainer.querySelector('#sideFullscreen') as HTMLButtonElement;
+  this.sideDownloadBtn = this.previewContainer.querySelector('#sideDownload') as HTMLButtonElement;
+  this.sideInfoBtn = this.previewContainer.querySelector('#sideInfoOpen') as HTMLButtonElement;
+  this.sideToggleThumbsBtn = this.previewContainer.querySelector('#sideToggleThumbnails') as HTMLButtonElement;
+  // 缩放滑杆
+  this.zoomSlider = this.previewContainer.querySelector('#zoomSlider') as HTMLInputElement;
+  this.zoomValueLabel = this.previewContainer.querySelector('#zoomValue') as HTMLElement;
+  // 底部迷你控制（已移除，不再查询）
+  this.bottomCenterControls = null as any;
+  this.miniPrevBtn = null as any;
+  this.miniNextBtn = null as any;
+  this.imageCounter = this.previewContainer.querySelector('#imageCounter');
     this.loadingIndicator = this.previewContainer.querySelector('#loadingIndicator')!;
     this.errorMessage = this.previewContainer.querySelector('#errorMessage')!;
     this.thumbnailNav = this.previewContainer.querySelector('#thumbnailNav')!;
     this.imageContainer = this.previewContainer.querySelector('#imageContainer')!;
-    this.infoPanel = this.previewContainer.querySelector('#imageInfoPanel')! as HTMLElement;
-    this.infoCollapseBtn = this.previewContainer.querySelector('#infoCollapseBtn')! as HTMLElement;
+  this.infoPanel = this.previewContainer.querySelector('#imageInfoPanel')! as HTMLElement;
+  this.infoCollapseBtn = this.previewContainer.querySelector('#infoCollapseBtn')! as HTMLElement;
     this.progressMask = this.previewContainer.querySelector('#imageProgressMask')! as HTMLElement;
     this.progressText = this.previewContainer.querySelector('#progressText')! as HTMLElement;
     this.progressPercent = this.previewContainer.querySelector('#progressPercent')! as HTMLElement;
@@ -187,15 +229,30 @@ export class ViewerPro {
 
   private bindEvents() {
     this.closeButton.addEventListener('click', () => this.close());
-    this.prevButton.addEventListener('click', () => this.navigate(-1));
-    this.nextButton.addEventListener('click', () => this.navigate(1));
-    this.zoomInButton.addEventListener('click', () => this.zoom(ZOOM_STEP));
-    this.zoomOutButton.addEventListener('click', () => this.zoom(-ZOOM_STEP));
-    this.resetZoomButton.addEventListener('click', () => this.resetZoom());
-    this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
-    this.downloadButton.addEventListener('click', () => this.downloadCurrentImage());
-  this.toggleInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
-  this.toggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
+  this.prevButton.addEventListener('click', () => this.navigate(-1));
+  this.nextButton.addEventListener('click', () => this.navigate(1));
+  if (this.zoomInButton) this.zoomInButton.addEventListener('click', () => this.zoom(ZOOM_STEP));
+  if (this.zoomOutButton) this.zoomOutButton.addEventListener('click', () => this.zoom(-ZOOM_STEP));
+  if (this.resetZoomButton) this.resetZoomButton.addEventListener('click', () => this.resetZoom());
+  if (this.fullscreenButton) this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
+  if (this.downloadButton) this.downloadButton.addEventListener('click', () => this.downloadCurrentImage());
+  if (this.toggleInfoBtn) this.toggleInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
+  if (this.toggleThumbsBtn) this.toggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
+    // 侧边栏事件
+    this.sideZoomInBtn.addEventListener('click', () => this.zoom(ZOOM_STEP));
+    this.sideZoomOutBtn.addEventListener('click', () => this.zoom(-ZOOM_STEP));
+    this.sideResetZoomBtn.addEventListener('click', () => this.resetZoom());
+    this.sideFullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+    this.sideDownloadBtn.addEventListener('click', () => this.downloadCurrentImage());
+    this.sideInfoBtn.addEventListener('click', () => this.toggleInfoPanel());
+    this.sideToggleThumbsBtn.addEventListener('click', () => this.toggleThumbnails());
+    // 缩放滑杆
+    this.zoomSlider.addEventListener('input', () => {
+      const v = parseFloat(this.zoomSlider.value);
+      this.scale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
+      this.updateImageTransform();
+    });
+  // 底部迷你控制已移除
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     this.previewImage.addEventListener('mousedown', (e) => this.startDrag(e));
     this.previewImage.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
@@ -208,8 +265,8 @@ export class ViewerPro {
         this.close();
       }
     });
-    this.previewImage.addEventListener('dblclick', () => this.resetZoom());
-    this.infoCollapseBtn.addEventListener('click', () => this.toggleInfoPanel());
+  this.previewImage.addEventListener('dblclick', () => this.resetZoom());
+  this.infoCollapseBtn.addEventListener('click', () => this.toggleInfoPanel());
   }
 
   private throttle<T extends (...args: any[]) => any>(func: T, limit: number): T {
@@ -283,7 +340,7 @@ export class ViewerPro {
     this.errorMessage.style.display = 'none';
     this.previewImage.style.display = 'none';
     this.previewTitle.textContent = currentImage.title || '图片预览';
-    this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
+  if (this.imageCounter) this.imageCounter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
     this.showProgress(0, 0, 0);
     
     const xhr = new XMLHttpRequest();
@@ -405,6 +462,16 @@ export class ViewerPro {
 
   private updateImageTransform() {
     this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    // 同步缩放 UI
+    if (this.zoomSlider) {
+      const v = Number(this.zoomSlider.value);
+      if (Math.abs(v - this.scale) > 0.001) this.zoomSlider.value = String(this.scale);
+    }
+    if (this.zoomValueLabel) {
+      this.zoomValueLabel.textContent = `${Math.round(this.scale * 100)}%`;
+    }
+    const miniZoom = this.previewContainer.querySelector('#miniZoom') as HTMLElement;
+    if (miniZoom) miniZoom.textContent = `${Math.round(this.scale * 100)}%`;
   }
 
   private startDrag(e: MouseEvent | Touch) {
@@ -463,12 +530,14 @@ export class ViewerPro {
       this.previewContainer.requestFullscreen?.().catch((err) => {
         console.error(`全屏错误: ${err.message}`);
       });
-      this.fullscreenButton.innerHTML = fullscreenExitIcon;
+      if (this.fullscreenButton) this.fullscreenButton.innerHTML = fullscreenExitIcon;
+      if (this.sideFullscreenBtn) this.sideFullscreenBtn.innerHTML = fullscreenExitIcon;
       this.isFullscreen = true;
     } else {
       if (document.exitFullscreen) {
         document.exitFullscreen();
-        this.fullscreenButton.innerHTML = fullscreenIcon;
+        if (this.fullscreenButton) this.fullscreenButton.innerHTML = fullscreenIcon;
+        if (this.sideFullscreenBtn) this.sideFullscreenBtn.innerHTML = fullscreenIcon;
         this.isFullscreen = false;
       }
     }
@@ -529,14 +598,11 @@ export class ViewerPro {
   }
 
   private toggleInfoPanel() {
-    if (this.infoPanel.classList.contains('expanded')) {
-      this.infoPanel.classList.remove('expanded');
-      this.infoPanel.classList.add('collapsed');
-      this.infoCollapseBtn.innerHTML = '<';
+    // 作为弹窗显示/隐藏
+    if (this.infoPanel.classList.contains('open')) {
+      this.infoPanel.classList.remove('open');
     } else {
-      this.infoPanel.classList.remove('collapsed');
-      this.infoPanel.classList.add('expanded');
-      this.infoCollapseBtn.innerHTML = '>';
+      this.infoPanel.classList.add('open');
     }
   }
 
@@ -565,14 +631,14 @@ export class ViewerPro {
   // 新增：清理资源的方法
   public destroy() {
     // 清理事件监听器
-    this.closeButton.removeEventListener('click', () => this.close());
-    this.prevButton.removeEventListener('click', () => this.navigate(-1));
-    this.nextButton.removeEventListener('click', () => this.navigate(1));
-    this.zoomInButton.removeEventListener('click', () => this.zoom(ZOOM_STEP));
-    this.zoomOutButton.removeEventListener('click', () => this.zoom(-ZOOM_STEP));
-    this.resetZoomButton.removeEventListener('click', () => this.resetZoom());
-    this.fullscreenButton.removeEventListener('click', () => this.toggleFullscreen());
-    this.downloadButton.removeEventListener('click', () => this.downloadCurrentImage());
+  this.closeButton.removeEventListener('click', () => this.close());
+  this.prevButton.removeEventListener('click', () => this.navigate(-1));
+  this.nextButton.removeEventListener('click', () => this.navigate(1));
+  if (this.zoomInButton) this.zoomInButton.removeEventListener('click', () => this.zoom(ZOOM_STEP));
+  if (this.zoomOutButton) this.zoomOutButton.removeEventListener('click', () => this.zoom(-ZOOM_STEP));
+  if (this.resetZoomButton) this.resetZoomButton.removeEventListener('click', () => this.resetZoom());
+  if (this.fullscreenButton) this.fullscreenButton.removeEventListener('click', () => this.toggleFullscreen());
+  if (this.downloadButton) this.downloadButton.removeEventListener('click', () => this.downloadCurrentImage());
     document.removeEventListener('keydown', (e) => this.handleKeyDown(e));
     
     // 清理拖拽相关事件
