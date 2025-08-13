@@ -29,15 +29,37 @@ export interface ImageObj {
   [key: string]: any;
 }
 
+// 加载状态信息接口
+export interface LoadingContext {
+  // 获取当前图片加载状态
+  getImageLoadingStatus: () => Promise<{ loaded: boolean; error?: string }>;
+  // 获取自定义渲染节点中的媒体元素加载状态
+  getMediaLoadingStatus: () => Promise<{ images: boolean[]; videos: boolean[]; audios: boolean[] }>;
+  // 监听图片加载完成
+  onImageLoaded: (callback: () => void) => void;
+  // 监听图片加载失败
+  onImageError: (callback: (error: string) => void) => void;
+  // 获取当前图片对象和索引
+  getCurrentImage: () => { image: ImageObj; index: number };
+  // 手动触发关闭 loading
+  closeLoading: () => void;
+}
+
 export interface ViewerProOptions {
-  // 支持：固定节点 | 无参工厂 | 按图片/索引生成的工厂
+  // 支持：固定节点 | 无参工厂 | 按图片/索引生成的工厂 | 返回 { node, done }
+  // 新增：done 函数可以接收 LoadingContext 参数，用于高度自定义控制
   loadingNode?:
     | HTMLElement
     | (() => HTMLElement)
-    | ((imgObj: ImageObj, idx: number) => HTMLElement);
+    | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+        node: HTMLElement; 
+        done: (context: LoadingContext) => void | Promise<void>;
+      });
   images?: ImageObj[];
   renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
   onImageLoad?: (imgObj: ImageObj, idx: number) => void;
+  // 当所有内容（包括自定义渲染内容）都准备就绪后调用
+  onContentReady?: (imgObj: ImageObj, idx: number) => void;
   // 当缩放/位移/索引变化时回调（含 renderNode 模式）
   onTransformChange?: (state: {
     scale: number;
@@ -86,7 +108,10 @@ export class ViewerPro {
   private customLoadingNode:
     | HTMLElement
     | (() => HTMLElement)
-    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+        node: HTMLElement; 
+        done: (context: LoadingContext) => void | Promise<void>;
+      })
     | null;
   private customRenderNode:
     | HTMLElement
@@ -97,6 +122,7 @@ export class ViewerPro {
     | ((imgObj: ImageObj, idx: number) => HTMLElement)
     | null;
   private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
+  private onContentReady: ((imgObj: ImageObj, idx: number) => void) | null;
   private onTransformChangeCb:
     | ((state: {
         scale: number;
@@ -124,6 +150,9 @@ export class ViewerPro {
   private startY = 0;
   private isFullscreen = false;
   private imageLoadToken: number = 0; // 新增
+  private currentImageLoadStatus: { loaded: boolean; error?: string } = { loaded: false };
+  private imageLoadCallbacks: Array<() => void> = [];
+  private imageErrorCallbacks: Array<(error: string) => void> = [];
 
   private _boundDrag!: (e: MouseEvent | Touch) => void;
   private _boundStopDrag!: () => void;
@@ -137,6 +166,8 @@ export class ViewerPro {
   this.customInfoRender = options.infoRender || null;
     this.onImageLoad =
       typeof options.onImageLoad === "function" ? options.onImageLoad : null;
+    this.onContentReady =
+      typeof options.onContentReady === "function" ? options.onContentReady : null;
     this.onTransformChangeCb =
       typeof options.onTransformChange === "function"
         ? options.onTransformChange
@@ -497,6 +528,67 @@ export class ViewerPro {
     }
   }
 
+  // 检查并触发图片回调（用于处理图片已经加载完成的情况）
+  private checkAndTriggerImageCallbacks() {
+    if (this.currentImageLoadStatus.loaded && this.imageLoadCallbacks.length > 0) {
+      this.imageLoadCallbacks.forEach(callback => {
+        try {
+          callback();
+        } catch (e) {
+          console.warn("Image load callback error:", e);
+        }
+      });
+    } else if (this.currentImageLoadStatus.error && this.imageErrorCallbacks.length > 0) {
+      this.imageErrorCallbacks.forEach(callback => {
+        try {
+          callback(this.currentImageLoadStatus.error || "未知错误");
+        } catch (e) {
+          console.warn("Image error callback error:", e);
+        }
+      });
+    }
+  }
+
+  // 监听自定义渲染节点中的图片加载
+  private monitorCustomNodeImageLoading(node: HTMLElement) {
+    const images = node.querySelectorAll('img');
+    
+    if (images.length === 0) {
+      // 如果没有图片，设置为已完成状态
+      this.currentImageLoadStatus = { loaded: true };
+      return;
+    }
+
+    let loadedCount = 0;
+    let hasError = false;
+
+    images.forEach((img) => {
+      if (img.complete && img.naturalWidth > 0) {
+        // 图片已经加载完成
+        loadedCount++;
+      } else {
+        // 监听图片加载
+        img.onload = () => {
+          loadedCount++;
+          if (loadedCount === images.length && !hasError) {
+            // 所有图片都加载完成，更新状态但不直接触发回调
+            this.currentImageLoadStatus = { loaded: true };
+          }
+        };
+
+        img.onerror = () => {
+          hasError = true;
+          this.currentImageLoadStatus = { loaded: false, error: "图片加载失败" };
+        };
+      }
+    });
+
+    // 如果所有图片都已经完成加载，设置状态
+    if (loadedCount === images.length) {
+      this.currentImageLoadStatus = { loaded: true };
+    }
+  }
+
   private updatePreview() {
     const currentImage = this.images[this.currentIndex];
   this.showLoading(currentImage, this.currentIndex);
@@ -533,8 +625,12 @@ export class ViewerPro {
           } catch {}
           this.previewImage.src = "";
         }
-        // 在自定义渲染模式下：保留 loading，直到 onImageLoad 执行完毕后再隐藏
+        // 在自定义渲染模式下：监听渲染节点中的图片加载
         this.errorMessage.style.display = "none";
+        
+        // 监听自定义渲染节点中的图片加载
+        this.monitorCustomNodeImageLoading(node);
+        
         let maybePromise: any = null;
         if (this.onImageLoad) {
           try {
@@ -550,20 +646,25 @@ export class ViewerPro {
         this.setInfoPanelContent(currentImage, this.currentIndex);
         // 自定义渲染不使用网络下载进度
         this.hideProgress();
-        // 若 onImageLoad 返回 Promise，则等待后再隐藏 loading
-        if (maybePromise && typeof maybePromise.then === "function") {
-          try {
-            (maybePromise as Promise<any>).then(
-              () => this.hideLoading(),
-              () => this.hideLoading()
-            );
-          } catch {
-            this.hideLoading();
+        
+        // 如果有自定义 loading 控制，则不自动隐藏 loading
+        if (!this._loadingDoneCallback) {
+          // 若 onImageLoad 返回 Promise，则等待后再隐藏 loading
+          if (maybePromise && typeof maybePromise.then === "function") {
+            try {
+              (maybePromise as Promise<any>).then(
+                () => this.hideLoading(),
+                () => this.hideLoading()
+              );
+            } catch {
+              this.hideLoading();
+            }
+          } else {
+            // 保证 loading 至少渲染一帧
+            requestAnimationFrame(() => requestAnimationFrame(() => this.hideLoading()));
           }
-        } else {
-          // 保证 loading 至少渲染一帧
-          requestAnimationFrame(() => requestAnimationFrame(() => this.hideLoading()));
         }
+        
         // 复位拖拽/缩放状态
         this.resetZoom();
         return;
@@ -609,6 +710,17 @@ export class ViewerPro {
           "previewImage"
         ) as HTMLImageElement;
         this.updateImageTransform();
+
+        // 更新图片加载状态
+        this.currentImageLoadStatus = { loaded: true };
+        // 触发图片加载完成回调
+        this.imageLoadCallbacks.forEach(callback => {
+          try {
+            callback();
+          } catch (e) {
+            console.warn("Image load callback error:", e);
+          }
+        });
       } else {
         this.handleImageError();
       }
@@ -616,6 +728,12 @@ export class ViewerPro {
       if (this.onImageLoad) {
         this.onImageLoad(currentImage, this.currentIndex);
       }
+
+      // 如果没有自定义渲染节点且没有自定义loading控制，表示是普通图片，直接通知内容就绪
+      if (!this.customRenderNode && !this._loadingDoneCallback) {
+        this.notifyContentReady();
+      }
+
   this.updateThumbnails();
   this.setInfoPanelContent(currentImage, this.currentIndex);
     };
@@ -657,6 +775,17 @@ export class ViewerPro {
     this.hideLoading();
     this.errorMessage.style.display = "block";
     this.errorMessage.textContent = "图片加载失败，请检查网络连接或图片地址";
+    
+    // 更新图片加载状态
+    this.currentImageLoadStatus = { loaded: false, error: "图片加载失败" };
+    // 触发图片加载失败回调
+    this.imageErrorCallbacks.forEach(callback => {
+      try {
+        callback("图片加载失败");
+      } catch (e) {
+        console.warn("Image error callback error:", e);
+      }
+    });
   }
 
   // 使用自定义渲染器填充信息面板
@@ -692,32 +821,99 @@ export class ViewerPro {
     }
   }
 
+  private _loadingDoneCallback: (() => void) | null = null;
   private showLoading(img?: ImageObj, idx?: number) {
     this.loadingIndicator.innerHTML = "";
     this.loadingIndicator.style.display = "flex";
+    this._loadingDoneCallback = null;
+    
+    // 重置图片加载状态
+    this.currentImageLoadStatus = { loaded: false };
+    this.imageLoadCallbacks = [];
+    this.imageErrorCallbacks = [];
+    
     if (this.customLoadingNode) {
       try {
         let node: unknown;
         const ln = this.customLoadingNode as
           | HTMLElement
           | (() => HTMLElement)
-          | ((imgObj: ImageObj, idx: number) => HTMLElement);
+          | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+              node: HTMLElement; 
+              done: (context: LoadingContext) => void | Promise<void>;
+            });
 
         if (ln instanceof HTMLElement) {
-          // 避免多次 append 移动原节点，使用深拷贝
           node = ln.cloneNode(true) as HTMLElement;
         } else if (typeof ln === "function") {
-          // 根据函数形参长度，兼容无参与 (img, idx)
           const arity = (ln as Function).length;
+          let result: any;
           if (arity >= 2) {
             const i = img ?? this.images[this.currentIndex];
             const k = idx ?? this.currentIndex;
-            node = (ln as (imgObj: ImageObj, idx: number) => HTMLElement)(
-              i,
-              k
-            );
+            result = (ln as (imgObj: ImageObj, idx: number) => any)(i, k);
           } else {
-            node = (ln as () => HTMLElement)();
+            result = (ln as () => any)();
+          }
+          if (result && typeof result === "object" && "node" in result && typeof result.node === "object") {
+            node = result.node;
+            if (typeof result.done === "function") {
+              // 创建 LoadingContext
+              const context: LoadingContext = {
+                getImageLoadingStatus: () => Promise.resolve(this.currentImageLoadStatus),
+                getMediaLoadingStatus: () => this.getMediaLoadingStatus(),
+                onImageLoaded: (callback: () => void) => {
+                  this.imageLoadCallbacks.push(callback);
+                },
+                onImageError: (callback: (error: string) => void) => {
+                  this.imageErrorCallbacks.push(callback);
+                },
+                getCurrentImage: () => ({
+                  image: this.images[this.currentIndex],
+                  index: this.currentIndex
+                }),
+                closeLoading: () => {
+                  this.closeLoading();
+                }
+              };
+              
+              // 先添加 DOM 节点，再调用 done 回调
+              if (node instanceof HTMLElement) {
+                this.loadingIndicator.appendChild(node);
+              }
+              
+              // 使用 nextTick 确保 DOM 已经添加到页面中，并延迟执行 done 回调
+              setTimeout(() => {
+                const doneResult = result.done(context);
+                
+                // 等待 done 回调完成后再检查图片状态
+                const checkAfterDone = () => {
+                  setTimeout(() => {
+                    this.checkAndTriggerImageCallbacks();
+                  }, 50);
+                };
+                
+                if (doneResult instanceof Promise) {
+                  doneResult.then(() => {
+                    checkAfterDone();
+                  }).catch((error) => {
+                    console.warn("Loading done callback promise rejected:", error);
+                    checkAfterDone();
+                  });
+                } else {
+                  checkAfterDone();
+                }
+              }, 0);
+              
+              this._loadingDoneCallback = () => {
+                if (typeof result.done === "function") {
+                  // 如果需要，可以再次调用 done
+                }
+              };
+              return; // 提前返回，避免重复添加节点
+            }
+          } else {
+            node = result;
           }
         }
         if (node instanceof HTMLElement) {
@@ -735,8 +931,53 @@ export class ViewerPro {
   }
 
   private hideLoading() {
+    // 如果 loadingNode 返回了 done，则只允许 done 主动关闭
+    if (this._loadingDoneCallback) return;
     this.loadingIndicator.style.display = "none";
     this.loadingIndicator.innerHTML = "";
+  }
+  // 提供外部关闭 loading 的方法
+  public closeLoading() {
+    this.loadingIndicator.style.display = "none";
+    this.loadingIndicator.innerHTML = "";
+    this._loadingDoneCallback = null;
+  }
+
+  // 通知内容就绪（用于自定义渲染场景）
+  public notifyContentReady() {
+    if (this.onContentReady) {
+      this.onContentReady(this.images[this.currentIndex], this.currentIndex);
+    }
+    // 如果有自定义 loading 控制，则调用其 done 方法
+    if (this._loadingDoneCallback) {
+      this._loadingDoneCallback();
+      this._loadingDoneCallback = null;
+    } else {
+      // 否则直接隐藏 loading
+      this.hideLoading();
+    }
+  }
+
+  // 获取自定义渲染节点中的媒体元素加载状态
+  private async getMediaLoadingStatus(): Promise<{ images: boolean[]; videos: boolean[]; audios: boolean[] }> {
+    const customRenderNode = this.imageContainer.querySelector('.custom-render-node');
+    if (!customRenderNode) {
+      return { images: [], videos: [], audios: [] };
+    }
+
+    const images = Array.from(customRenderNode.querySelectorAll('img'));
+    const videos = Array.from(customRenderNode.querySelectorAll('video'));
+    const audios = Array.from(customRenderNode.querySelectorAll('audio'));
+
+    const imageStatuses = images.map(img => img.complete && img.naturalHeight !== 0);
+    const videoStatuses = videos.map(video => video.readyState >= 3); // HAVE_FUTURE_DATA
+    const audioStatuses = audios.map(audio => audio.readyState >= 3);
+
+    return {
+      images: imageStatuses,
+      videos: videoStatuses,
+      audios: audioStatuses
+    };
   }
 
   private navigate(direction: number) {

@@ -46,9 +46,8 @@ onMounted(() => {
 });
 
 const init = async () => {
-  // 1. 自定义 loading：按图片/索引动态返回不同节点
+  // 1. 自定义 loading：高度自定义控制
   const customLoading = (imgObj: ImageObj, idx: number) => {
-    console.log('🌳-----customLoading-----', imgObj,idx);
     const wrap = document.createElement("div");
     wrap.style.display = "flex";
     wrap.style.flexDirection = "column";
@@ -65,8 +64,74 @@ const init = async () => {
             <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.8s" repeatCount="indefinite"/>
           </circle>
         </svg>
-        <span>Live Photo 加载中…（第 ${idx + 1} 张）</span>
+        <span id="loading-text-${idx}">Live Photo 加载中…（第 ${idx + 1} 张）</span>
+        <div style="font-size:12px;opacity:0.8;" id="loading-status-${idx}">准备加载图片和视频...</div>
       `;
+      
+      // 返回高度自定义的控制器
+      return {
+        node: wrap,
+        done: async (context: any) => {
+          // 等待 DOM 添加完成
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          const statusEl = document.getElementById(`loading-status-${idx}`);
+          if (statusEl) statusEl.textContent = "检查图片加载状态...";
+          
+          // 监听图片加载完成
+          let imageLoaded = false;
+          let mediaReady = false;
+          
+          context.onImageLoaded(() => {
+            imageLoaded = true;
+            if (statusEl) statusEl.textContent = "图片加载完成，检查Live Photo媒体...";
+            checkAllReady();
+          });
+          
+          context.onImageError((error: string) => {
+            if (statusEl) statusEl.textContent = `加载失败: ${error}`;
+            // 即使失败也要关闭loading
+            setTimeout(() => context.closeLoading(), 2000);
+          });
+          
+          // 模拟检查Live Photo媒体加载状态
+          const checkMediaStatus = async () => {
+            try {
+              const mediaStatus = await context.getMediaLoadingStatus();
+              const allImagesLoaded = mediaStatus.images.every((loaded: boolean) => loaded);
+              const allVideosLoaded = mediaStatus.videos.every((loaded: boolean) => loaded);
+              
+              if (allImagesLoaded && allVideosLoaded) {
+                mediaReady = true;
+                if (statusEl) statusEl.textContent = "Live Photo 媒体加载完成！";
+                checkAllReady();
+              } else {
+                if (statusEl) {
+                  statusEl.textContent = `媒体加载中... 图片:${mediaStatus.images.filter(Boolean).length}/${mediaStatus.images.length} 视频:${mediaStatus.videos.filter(Boolean).length}/${mediaStatus.videos.length}`;
+                }
+                // 继续检查
+                setTimeout(checkMediaStatus, 200);
+              }
+            } catch (e) {
+              // 失败时也认为准备就绪
+              mediaReady = true;
+              checkAllReady();
+            }
+          };
+          
+          const checkAllReady = () => {
+            if (imageLoaded && mediaReady) {
+              if (statusEl) statusEl.textContent = "加载完成！";
+              setTimeout(() => {
+                context.closeLoading();
+              }, 500);
+            }
+          };
+          
+          // 开始检查媒体状态
+          setTimeout(checkMediaStatus, 100);
+        }
+      };
     } else {
       wrap.innerHTML = `
         <svg width="36" height="36" viewBox="0 0 50 50">
@@ -74,10 +139,50 @@ const init = async () => {
             <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
           </circle>
         </svg>
-        <span>${imgObj.title || "图片"} 加载中…（第 ${idx + 1} 张）</span>
+        <span id="loading-text-${idx}">${imgObj.title || "图片"} 加载中…（第 ${idx + 1} 张）</span>
+        <div style="font-size:12px;opacity:0.8;" id="loading-status-${idx}">准备加载图片...</div>
       `;
+      
+      // 对于普通图片，等待图片加载完成
+      return {
+        node: wrap,
+        done: async (context: any) => {
+          // 等待 DOM 添加完成
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          const statusEl = document.getElementById(`loading-status-${idx}`);
+          
+          // 可以在这里添加自定义的异步操作，比如调用接口
+          if (statusEl) statusEl.textContent = "调用API检查权限...";
+          
+          try {
+            // 模拟API调用
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (statusEl) statusEl.textContent = "权限检查完成，等待图片加载...";
+            
+            // 监听图片加载
+            context.onImageLoaded(() => {
+              if (statusEl) statusEl.textContent = "图片加载完成！";
+              setTimeout(() => {
+                context.closeLoading();
+              }, 300);
+            });
+            
+            context.onImageError((error: string) => {
+              if (statusEl) statusEl.textContent = `加载失败: ${error}`;
+              setTimeout(() => context.closeLoading(), 2000);
+            });
+            
+          } catch (error) {
+            if (statusEl) statusEl.textContent = "API调用失败，继续加载图片...";
+            // 即使API失败，也继续等待图片加载
+            context.onImageLoaded(() => {
+              context.closeLoading();
+            });
+          }
+        }
+      };
     }
-    return wrap;
   };
 
   // 2. 自定义渲染节点
@@ -135,13 +240,19 @@ const init = async () => {
     renderNode: customRender,
     infoRender,
     onImageLoad: (imgObj: ImageObj, idx: number) => {
-
-      if (imgObj.type !== "live-photo") return;
+      if (imgObj.type !== "live-photo") {
+        // 对于普通图片，loading 已经由 customLoading 控制
+        return;
+      }
+      
+      // 对于 live-photo，创建 LivePhotoViewer 实例
       const demoSource = {
         photoSrc: imgObj.photoSrc || "",
         videoSrc: imgObj.videoSrc || "",
       };
       const container = document.getElementById(`live-photo-container-${idx}`);
+      
+      // 创建 LivePhotoViewer 实例
       new LivePhotoViewer({
         photoSrc: demoSource.photoSrc,
         videoSrc: demoSource.videoSrc,
@@ -159,6 +270,7 @@ const init = async () => {
           },
         },
       });
+      // 注意：loading 的关闭已经由 customLoading 中的逻辑处理
     },
     onTransformChange: ({ scale, translateX, translateY, index }) => {
       // 让自定义 render 的根节点跟随缩放/位移
