@@ -1,3 +1,119 @@
+/* ============================================
+   CSS Custom Properties (Design System)
+   ============================================ */
+
+/* Dark Theme (Default) */
+:root,
+.image-preview-container[data-theme="dark"],
+.image-preview-container:not([data-theme]) {
+  /* Colors - Dark Theme */
+  --vp-primary-bg: rgba(30, 40, 60, 0.85);
+  --vp-secondary-bg: rgba(30, 40, 60, 0.65);
+  --vp-overlay-bg: rgba(0, 0, 0, 0.8);
+  --vp-text-primary: #ffffff;
+  --vp-text-secondary: rgba(255, 255, 255, 0.85);
+  --vp-border-color: rgba(255, 255, 255, 0.14);
+  --vp-hover-bg: rgba(255, 255, 255, 0.15);
+  --vp-active-border: #ffffff;
+  --vp-thumbnail-bg: #222;
+  --vp-error-bg: rgba(220, 38, 38, 0.25);
+  --vp-error-border: rgba(220, 38, 38, 0.4);
+  
+  /* Shadows - Dark Theme */
+  --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.35);
+  
+  /* Spacing */
+  --vp-space-xs: 0.25rem;
+  --vp-space-sm: 0.5rem;
+  --vp-space-md: 1rem;
+  --vp-space-lg: 1.5rem;
+  --vp-space-xl: 2rem;
+  
+  /* Border Radius */
+  --vp-radius-sm: 8px;
+  --vp-radius-md: 12px;
+  --vp-radius-lg: 18px;
+  --vp-radius-xl: 22px;
+  --vp-radius-full: 50%;
+  
+  /* Transitions */
+  --vp-transition-fast: 0.15s ease;
+  --vp-transition-base: 0.2s ease;
+  --vp-transition-slow: 0.3s ease;
+  --vp-transition-bounce: 0.35s cubic-bezier(0.4, 2, 0.6, 1);
+}
+
+/* Light Theme */
+.image-preview-container[data-theme="light"] {
+  /* Colors - Light Theme */
+  --vp-primary-bg: rgba(255, 255, 255, 0.95);
+  --vp-secondary-bg: rgba(255, 255, 255, 0.85);
+  --vp-overlay-bg: rgba(240, 240, 240, 0.75);
+  --vp-text-primary: #1a1a1a;
+  --vp-text-secondary: rgba(26, 26, 26, 0.85);
+  --vp-border-color: rgba(0, 0, 0, 0.12);
+  --vp-hover-bg: rgba(0, 0, 0, 0.08);
+  --vp-active-border: #2563eb;
+  --vp-thumbnail-bg: #f5f5f5;
+  --vp-error-bg: rgba(220, 38, 38, 0.15);
+  --vp-error-border: rgba(220, 38, 38, 0.3);
+  
+  /* Shadows - Light Theme */
+  --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* Auto Theme - follows system preference */
+@media (prefers-color-scheme: light) {
+  .image-preview-container[data-theme="auto"] {
+    /* Colors - Light Theme */
+    --vp-primary-bg: rgba(255, 255, 255, 0.95);
+    --vp-secondary-bg: rgba(255, 255, 255, 0.85);
+    --vp-overlay-bg: rgba(240, 240, 240, 0.75);
+    --vp-text-primary: #1a1a1a;
+    --vp-text-secondary: rgba(26, 26, 26, 0.85);
+    --vp-border-color: rgba(0, 0, 0, 0.12);
+    --vp-hover-bg: rgba(0, 0, 0, 0.08);
+    --vp-active-border: #2563eb;
+    --vp-thumbnail-bg: #f5f5f5;
+    --vp-error-bg: rgba(220, 38, 38, 0.15);
+    --vp-error-border: rgba(220, 38, 38, 0.3);
+    
+    /* Shadows - Light Theme */
+    --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+    --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .image-preview-container[data-theme="auto"] {
+    /* Colors - Dark Theme */
+    --vp-primary-bg: rgba(30, 40, 60, 0.85);
+    --vp-secondary-bg: rgba(30, 40, 60, 0.65);
+    --vp-overlay-bg: rgba(0, 0, 0, 0.8);
+    --vp-text-primary: #ffffff;
+    --vp-text-secondary: rgba(255, 255, 255, 0.85);
+    --vp-border-color: rgba(255, 255, 255, 0.14);
+    --vp-hover-bg: rgba(255, 255, 255, 0.15);
+    --vp-active-border: #ffffff;
+    --vp-thumbnail-bg: #222;
+    --vp-error-bg: rgba(220, 38, 38, 0.25);
+    --vp-error-border: rgba(220, 38, 38, 0.4);
+    
+    /* Shadows - Dark Theme */
+    --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.18);
+    --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.25);
+    --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* ============================================
+   Base Container Styles
+   ============================================ */
 /* 图片预览组件样式 */
 .image-preview-container {
   position: fixed;
@@ -29,7 +145,9 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.8);
+  /* background-color: rgba(0, 0, 0, 0.8); */
+  background: #000;
+  opacity: 0.5;
   backdrop-filter: blur(8px);
   will-change: backdrop-filter;
 }
@@ -44,6 +162,9 @@
   padding: 0;
   box-sizing: border-box;
 }
+/* ============================================
+   Side Toolbar
+   ============================================ */
 /* 左侧竖向工具栏 */
 .side-toolbar {
   position: absolute;
@@ -52,20 +173,35 @@
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--vp-space-sm);
   z-index: 22;
+  background: linear-gradient(
+    135deg,
+    rgba(30, 40, 60, 0.75) 0%,
+    rgba(30, 40, 60, 0.65) 100%
+  );
+  backdrop-filter: blur(12px);
+  border-radius: var(--vp-radius-lg);
+  padding: var(--vp-space-sm);
+  box-shadow: var(--vp-shadow-md);
+  border: 1px solid var(--vp-border-color);
 }
 .side-toolbar .control-button {
   width: 44px;
   height: 44px;
-  background: rgba(30, 40, 60, 0.65);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  background: transparent;
+  transition: all var(--vp-transition-base);
+}
+.side-toolbar .control-button:hover {
+  background: var(--vp-hover-bg);
+  transform: scale(1.08);
 }
 .side-toolbar-sep {
-  width: 1px;
+  height: 1px;
+  width: 60%;
   align-self: center;
-  height: 10px;
-  background: transparent;
+  background: var(--vp-border-color);
+  margin: var(--vp-space-xs) 0;
 }
 .image-preview-header {
   position: absolute;
@@ -122,32 +258,37 @@
   margin-bottom: 100px;
   pointer-events: auto;
 }
+/* ============================================
+   Control Buttons
+   ============================================ */
 .control-button {
-  background-color: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8px);
-  color: white;
-  border: none;
-  border-radius: 50%;
+  background: var(--vp-secondary-bg);
+  backdrop-filter: blur(10px);
+  color: var(--vp-text-primary);
+  border: 1px solid var(--vp-border-color);
+  border-radius: var(--vp-radius-full);
   width: 2.5rem;
   height: 2.5rem;
-  margin: 0 0.5rem;
+  margin: 0 var(--vp-space-sm);
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--vp-transition-base);
   box-sizing: border-box;
-  padding: 0.5rem;
+  padding: var(--vp-space-sm);
+  box-shadow: var(--vp-shadow-sm);
 }
 .control-button:hover {
-  background-color: rgba(255, 255, 255, 0.3);
+  background: var(--vp-hover-bg);
   transform: scale(1.05);
+  box-shadow: var(--vp-shadow-md);
 }
 .control-button:active {
-  transform: scale(0.95);
+  transform: scale(0.98);
 }
 .control-button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
   transform: none;
 }
@@ -180,18 +321,21 @@
 }
 /* 图片加载动画 */
 .image-loading {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s ease-in-out infinite;
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--vp-radius-full);
+  border-top-color: var(--vp-text-primary);
+  animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
   to {
     transform: rotate(360deg);
   }
 }
+/* ============================================
+   Thumbnail Navigation
+   ============================================ */
 /* 缩略图导航 */
 .thumbnail-nav {
   position: fixed;
@@ -208,13 +352,15 @@
   justify-content: center;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0.5rem 1.5rem 1.2rem 1.5rem;
+  padding: var(--vp-space-sm) var(--vp-space-lg) var(--vp-space-md) var(--vp-space-lg);
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.45) 80%,
-    rgba(0, 0, 0, 0)
+    rgba(0, 0, 0, 0.6) 0%,
+    rgba(0, 0, 0, 0.3) 70%,
+    rgba(0, 0, 0, 0) 100%
   );
-  border-radius: 0 0 18px 18px;
+  backdrop-filter: blur(8px);
+  border-radius: var(--vp-radius-lg) var(--vp-radius-lg) 0 0;
   z-index: 30;
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -226,27 +372,33 @@
 .thumbnail {
   width: 80px;
   height: 60px;
-  margin: 0 0.25rem;
-  border-radius: 0.5rem;
+  margin: 0 var(--vp-space-xs);
+  border-radius: var(--vp-radius-sm);
   overflow: hidden;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background: #222;
+  transition: all var(--vp-transition-base);
+  background: var(--vp-thumbnail-bg);
   flex-shrink: 0;
 }
 .thumbnail:hover {
-  border-color: rgba(255, 255, 255, 0.5);
+  border-color: var(--vp-border-color);
+  transform: translateY(-4px);
+  box-shadow: var(--vp-shadow-sm);
 }
 .thumbnail.active {
-  border-color: #fff;
-  transform: scale(1.08);
+  border-color: var(--vp-active-border);
+  transform: scale(1.1);
+  box-shadow: var(--vp-shadow-md);
 }
 .thumbnail img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+/* ============================================
+   Loading and Progress Indicators
+   ============================================ */
 /* 加载状态样式 */
 .loading-overlay {
   position: absolute;
@@ -257,75 +409,26 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   z-index: 60; /* 确保盖住自定义渲染节点与箭头等 */
+  transition: opacity var(--vp-transition-slow);
 }
 /* 错误状态样式 */
 .error-message {
-  color: white;
-  background-color: rgba(255, 0, 0, 0.2);
-  padding: 1rem;
-  border-radius: 0.5rem;
+  color: var(--vp-text-primary);
+  background: var(--vp-error-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--vp-error-border);
+  padding: var(--vp-space-md) var(--vp-space-lg);
+  border-radius: var(--vp-radius-md);
   text-align: center;
-}
-/* 右侧垂直缩放滑杆 */
-.zoom-slider {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  z-index: 22;
-}
-.zoom-slider input[type="range"] {
-  writing-mode: bt-lr; /* Safari/Chrome 垂直 */
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 6px;
-  height: 200px;
-  background: transparent;
-}
-.zoom-slider .zoom-value {
-  color: #fff;
-  font-size: 0.9rem;
-  opacity: 0.9;
-}
-
-/* 底部居中迷你控制区 */
-.bottom-center-controls {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 110px; /* 位于缩略图条之上 */
-  background: rgba(30, 40, 60, 0.65);
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  z-index: 22;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-}
-.bottom-center-controls .mini-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.bottom-center-controls .mini-zoom {
-  color: #fff;
+  box-shadow: var(--vp-shadow-sm);
   font-size: 0.95rem;
 }
-
+/* ============================================
+   Info Modal
+   ============================================ */
 /* 右侧信息弹窗（UI 弹窗风格） */
 .info-modal {
   position: absolute;
@@ -334,31 +437,44 @@
   bottom: 18px;
   width: 360px;
   max-width: 40vw;
-  background: radial-gradient(
-      1200px 500px at 100% 0%,
-      rgba(255, 255, 255, 0.12),
-      rgba(255, 255, 255, 0.04) 40%,
-      rgba(255, 255, 255, 0.02) 70%
-    ),
-    rgba(30, 40, 60, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(12px);
-  color: #fff;
-  border-radius: 22px;
-  padding: 18px 18px 22px 18px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(30, 40, 60, 0.9) 0%,
+    rgba(30, 40, 60, 0.75) 100%
+  );
+  backdrop-filter: blur(16px);
+  color: var(--vp-text-primary);
+  border: 1px solid var(--vp-border-color);
+  border-radius: var(--vp-radius-xl);
+  padding: var(--vp-space-lg) var(--vp-space-lg) var(--vp-space-xl) var(--vp-space-lg);
+  box-shadow: var(--vp-shadow-lg);
   display: none;
   flex-direction: column;
   z-index: 40;
+  transition: all var(--vp-transition-bounce);
 }
 .info-modal.open {
   display: flex;
+  animation: slideInRight 0.3s ease-out;
+}
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .info-modal-header {
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   font-weight: 600;
+  letter-spacing: 0.5px;
   opacity: 0.95;
-  margin-bottom: 12px;
+  margin-bottom: var(--vp-space-md);
+  padding-bottom: var(--vp-space-sm);
+  border-bottom: 1px solid var(--vp-border-color);
 }
 .info-modal .info-panel-content {
   overflow: auto;
@@ -370,16 +486,21 @@
   right: 10px;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--vp-radius-full);
   border: none;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: var(--vp-hover-bg);
+  color: var(--vp-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 50;
   font-size: 0;
+  transition: all var(--vp-transition-base);
+}
+.info-modal-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
 }
 /* 响应式调整 */
 @media (max-width: 768px) {
@@ -574,6 +695,9 @@
   height: 100%;
   padding: 0;
 }
+/* ============================================
+   Arrow Buttons
+   ============================================ */
 .arrow-btn {
   position: absolute;
   bottom: 120px; /* 位于缩略图上方，与主区域 padding 保持一致 */
@@ -581,24 +705,26 @@
   transform: none;
   width: 48px;
   height: 48px;
-  background: rgba(30, 40, 60, 0.65);
-  color: #fff;
-  border: none;
-  border-radius: 50%;
+  background: var(--vp-secondary-bg);
+  backdrop-filter: blur(10px);
+  color: var(--vp-text-primary);
+  border: 1px solid var(--vp-border-color);
+  border-radius: var(--vp-radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 32; /* 高于缩略图条(30) */
   font-size: 0;
-  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
-  transition: background 0.2s, transform 0.2s;
+  box-shadow: var(--vp-shadow-sm);
+  transition: all var(--vp-transition-base);
   user-select: none;
   will-change: background, transform;
 }
 .arrow-btn:hover {
-  background: rgba(30, 40, 60, 0.85);
-  transform: scale(1.05);
+  background: var(--vp-primary-bg);
+  transform: scale(1.08);
+  box-shadow: var(--vp-shadow-md);
 }
 .arrow-btn:disabled {
   opacity: 0.5;
@@ -655,16 +781,18 @@
   bottom: 120px;
   min-width: 120px;
   min-height: 64px;
-  background: rgba(30, 40, 60, 0.85);
-  color: #fff;
-  border-radius: 18px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.18);
+  background: var(--vp-primary-bg);
+  backdrop-filter: blur(12px);
+  color: var(--vp-text-primary);
+  border: 1px solid var(--vp-border-color);
+  border-radius: var(--vp-radius-lg);
+  box-shadow: var(--vp-shadow-md);
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 0.8rem;
+  gap: var(--vp-space-md);
   z-index: 100;
-  padding: 0.7rem 1.2rem;
+  padding: var(--vp-space-md) var(--vp-space-lg);
   font-size: 1rem;
   pointer-events: none;
 }
@@ -702,4 +830,133 @@
 #progressSize {
   font-size: 0.92rem;
   opacity: 0.7;
+}
+
+
+/* ============================================
+   Light Theme Specific Overrides
+   ============================================ */
+.image-preview-container[data-theme="light"] .side-toolbar {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.85) 100%
+  );
+}
+
+.image-preview-container[data-theme="light"] .image-preview-overlay {
+  /* background-color: rgba(240, 240, 240, 0.75); */
+  background: #000;
+  opacity: 0.5;
+}
+
+.image-preview-container[data-theme="light"] .image-loading {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: var(--vp-text-primary);
+}
+
+.image-preview-container[data-theme="light"] .progress-bar {
+  stroke: var(--vp-text-primary);
+}
+
+.image-preview-container[data-theme="light"] .progress-bg {
+  stroke: rgba(0, 0, 0, 0.2);
+}
+
+.image-preview-container[data-theme="light"] .thumbnail-nav {
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.6) 70%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.image-preview-container[data-theme="light"] .thumbnail-nav::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.image-preview-container[data-theme="light"] .info-modal {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.image-preview-container[data-theme="light"] .info-modal-header {
+  border-bottom-color: rgba(0, 0, 0, 0.12);
+}
+
+.image-preview-container[data-theme="light"] .info-modal-close {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.image-preview-container[data-theme="light"] .info-modal-close:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Auto theme - Light mode */
+@media (prefers-color-scheme: light) {
+  .image-preview-container[data-theme="auto"] .side-toolbar {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.85) 100%
+    );
+  }
+
+  .image-preview-container[data-theme="auto"] .image-preview-overlay {
+    /* background-color: rgba(240, 240, 240, 0.75); */
+    background: #000;
+  opacity: 0.5;
+  }
+
+  .image-preview-container[data-theme="auto"] .image-loading {
+    border-color: rgba(0, 0, 0, 0.15);
+    border-top-color: var(--vp-text-primary);
+  }
+
+  .image-preview-container[data-theme="auto"] .progress-bar {
+    stroke: var(--vp-text-primary);
+  }
+
+  .image-preview-container[data-theme="auto"] .progress-bg {
+    stroke: rgba(0, 0, 0, 0.2);
+  }
+
+  .image-preview-container[data-theme="auto"] .thumbnail-nav {
+    background: linear-gradient(
+      to top,
+      rgba(255, 255, 255, 0.9) 0%,
+      rgba(255, 255, 255, 0.6) 70%,
+      rgba(255, 255, 255, 0) 100%
+    );
+  }
+
+  .image-preview-container[data-theme="auto"] .thumbnail-nav::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .image-preview-container[data-theme="auto"] .info-modal {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(255, 255, 255, 0.95) 100%
+    );
+    border: 1px solid rgba(0, 0, 0, 0.12);
+  }
+
+  .image-preview-container[data-theme="auto"] .info-modal-header {
+    border-bottom-color: rgba(0, 0, 0, 0.12);
+  }
+
+  .image-preview-container[data-theme="auto"] .info-modal-close {
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  .image-preview-container[data-theme="auto"] .info-modal-close:hover {
+    background: rgba(0, 0, 0, 0.15);
+  }
 }

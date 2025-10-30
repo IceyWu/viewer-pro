@@ -50,10 +50,19 @@ const images: ViewerItem[] = [
 ];
 
 const viewer = ref<ViewerPro | null>(null);
+const currentTheme = ref<'dark' | 'light' | 'auto'>('dark');
 
 onMounted(() => {
   init();
 });
+
+// 切换主题
+const setTheme = (theme: 'dark' | 'light' | 'auto') => {
+  currentTheme.value = theme;
+  if (viewer.value) {
+    viewer.value.setTheme(theme);
+  }
+};
 
 const init = async () => {
   // 1. 自定义 loading：高度自定义控制
@@ -309,6 +318,9 @@ const init = async () => {
   // viewer.value.addImages(images);
   viewer.value.addImages(imagesV2.value);
   viewer.value.init();
+  
+  // 设置初始主题
+  viewer.value.setTheme(currentTheme.value);
 };
 
 // 点击图片打开预览
@@ -327,6 +339,29 @@ function openPreview(idx: number) {
     <p class="text-gray-600 mb-8 text-center max-w-3xl mx-auto">
       这是一个功能强大的图片预览组件，支持图片缩放、拖拽、切换、全屏等功能，拥有流畅的动画效果和现代感的UI设计。
     </p>
+    
+    <!-- 主题切换控制 -->
+    <div class="theme-controls mb-8 flex justify-center gap-4">
+      <button 
+        @click="setTheme('dark')"
+        :class="['theme-btn', { active: currentTheme === 'dark' }]"
+      >
+        <i class="fas fa-moon"></i> 深色主题
+      </button>
+      <button 
+        @click="setTheme('light')"
+        :class="['theme-btn', { active: currentTheme === 'light' }]"
+      >
+        <i class="fas fa-sun"></i> 浅色主题
+      </button>
+      <button 
+        @click="setTheme('auto')"
+        :class="['theme-btn', { active: currentTheme === 'auto' }]"
+      >
+        <i class="fas fa-circle-half-stroke"></i> 自动
+      </button>
+    </div>
+    
     <div class="image-grid">
       <div
         v-for="(img, idx) in imagesV2"
@@ -345,6 +380,49 @@ function openPreview(idx: number) {
 
 <style scoped>
 @import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css");
+
+/* 主题切换按钮 */
+.theme-controls {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: white;
+  color: #374151;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.theme-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.theme-btn.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #2563eb;
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.theme-btn i {
+  font-size: 1.1rem;
+}
+
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));

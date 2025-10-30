@@ -70,6 +70,8 @@ export interface ViewerProOptions {
   }) => void;
   // 自定义右侧信息面板渲染
   infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
+  // 主题设置: 'dark' | 'light' | 'auto'
+  theme?: 'dark' | 'light' | 'auto';
 }
 
 export class ViewerPro {
@@ -99,8 +101,6 @@ export class ViewerPro {
   private sideDownloadBtn!: HTMLButtonElement;
   private sideInfoBtn!: HTMLButtonElement;
   private sideToggleThumbsBtn!: HTMLButtonElement;
-  private zoomSlider!: HTMLInputElement;
-  private zoomValueLabel!: HTMLElement;
   private customLoadingNode:
     | HTMLElement
     | (() => HTMLElement)
@@ -145,6 +145,7 @@ export class ViewerPro {
   private startX = 0;
   private startY = 0;
   private isFullscreen = false;
+  private theme: 'dark' | 'light' | 'auto' = 'dark';
   private imageLoadToken: number = 0; // 新增
   private currentImageLoadStatus: { loaded: boolean; error?: string } = { loaded: false };
   private imageLoadCallbacks: Array<() => void> = [];
@@ -177,6 +178,7 @@ export class ViewerPro {
       typeof options.onTransformChange === "function"
         ? options.onTransformChange
         : null;
+    this.theme = options.theme || 'dark';
 
     this.initializeContainer();
     this.initializeElements();
@@ -192,6 +194,7 @@ export class ViewerPro {
     this.previewContainer = document.createElement("div");
     this.previewContainer.className = "image-preview-container";
     this.previewContainer.id = "imagePreview";
+    this.previewContainer.setAttribute('data-theme', this.theme);
     document.body.appendChild(this.previewContainer);
     this.previewContainer.innerHTML = this.getContainerHTML();
   }
@@ -228,13 +231,6 @@ export class ViewerPro {
               图片加载失败
             </div>
             <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
-
-            <!-- 右侧垂直缩放滑杆 -->
-            <div class="zoom-slider" id="zoomSliderWrap">
-              <input type="range" id="zoomSlider" min="${ZOOM_MIN}" max="${ZOOM_MAX}" step="0.01" value="1" />
-              <div class="zoom-value" id="zoomValue">100%</div>
-            </div>
-
           </div>
           <div class="image-progress-mask" id="imageProgressMask" style="display:none;">
             <div class="progress-ring"><svg width="32" height="32"><circle class="progress-bg" cx="16" cy="16" r="14" stroke-width="4" fill="none"/><circle class="progress-bar" cx="16" cy="16" r="14" stroke-width="4" fill="none"/></svg></div>
@@ -307,13 +303,6 @@ export class ViewerPro {
     this.sideToggleThumbsBtn = this.previewContainer.querySelector(
       "#sideToggleThumbnails"
     ) as HTMLButtonElement;
-    // 缩放滑杆
-    this.zoomSlider = this.previewContainer.querySelector(
-      "#zoomSlider"
-    ) as HTMLInputElement;
-    this.zoomValueLabel = this.previewContainer.querySelector(
-      "#zoomValue"
-    ) as HTMLElement;
     this.imageCounter = this.previewContainer.querySelector("#imageCounter");
     this.loadingIndicator =
       this.previewContainer.querySelector("#loadingIndicator")!;
@@ -354,8 +343,6 @@ export class ViewerPro {
     this._boundTouchEnd = this.stopDrag.bind(this);
     this._boundKeyDown = this.handleKeyDown.bind(this);
     this._boundWheel = this.throttle((e: WheelEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("#zoomSliderWrap")) return;
       e.preventDefault();
       this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
     }, 16);
@@ -365,8 +352,6 @@ export class ViewerPro {
       }
     };
     this._boundImageDblClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("#zoomSliderWrap")) return;
       this.resetZoom();
     };
     this._boundMouseDown = (e: MouseEvent) => {
@@ -421,12 +406,6 @@ export class ViewerPro {
     this.sideToggleThumbsBtn.addEventListener("click", () =>
       this.toggleThumbnails()
     );
-    // 缩放滑杆
-    this.zoomSlider.addEventListener("input", () => {
-      const v = parseFloat(this.zoomSlider.value);
-      this.scale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
-      this.updateImageTransform();
-    });
     // 底部迷你控制已移除
     document.addEventListener("keydown", this._boundKeyDown);
     // 将拖拽与缩放事件绑定到容器，兼容 renderNode 模式
@@ -445,7 +424,7 @@ export class ViewerPro {
   // 判断是否应开始拖拽：排除交互控件，仅对图片或自定义节点生效
   private shouldStartDrag(target: HTMLElement): boolean {
     if (
-      target.closest("#zoomSliderWrap, .arrow-btn, .info-modal, .side-toolbar")
+      target.closest(".arrow-btn, .info-modal, .side-toolbar")
     )
       return false;
     return !!target.closest(
@@ -1040,19 +1019,6 @@ export class ViewerPro {
     if (this.previewImage) {
       this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
     }
-    // 同步缩放 UI
-    if (this.zoomSlider) {
-      const v = Number(this.zoomSlider.value);
-      if (Math.abs(v - this.scale) > 0.001)
-        this.zoomSlider.value = String(this.scale);
-    }
-    if (this.zoomValueLabel) {
-      this.zoomValueLabel.textContent = `${Math.round(this.scale * 100)}%`;
-    }
-    const miniZoom = this.previewContainer.querySelector(
-      "#miniZoom"
-    ) as HTMLElement;
-    if (miniZoom) miniZoom.textContent = `${Math.round(this.scale * 100)}%`;
 
     // 根据缩放状态更新容器光标
     if (this.imageContainer) {
@@ -1380,6 +1346,19 @@ export class ViewerPro {
     this.imageLoadToken = 0;
     this.currentImageLoadStatus = { loaded: false };
     this._loadingDoneCallback = null;
+  }
+
+  // 设置主题
+  public setTheme(theme: 'dark' | 'light' | 'auto') {
+    this.theme = theme;
+    if (this.previewContainer) {
+      this.previewContainer.setAttribute('data-theme', theme);
+    }
+  }
+
+  // 获取当前主题
+  public getTheme(): 'dark' | 'light' | 'auto' {
+    return this.theme;
   }
 }
 
