@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed, h, render } from "vue";
-import { ViewerPro, type ImageObj } from "../../src/index";
-import "../../src/core/ViewerPro.css";
+import { ViewerPro, type ViewerItem } from "viewer-pro";
 import { LivePhotoViewer } from "live-photo";
 import testData from "./assets/data.json";
 import ImageMetaPanel from "./components/ImageMetaPanel.vue";
-const imagesV2 = computed<ImageObj[]>(() => {
+const imagesV2 = computed<ViewerItem[]>(() => {
   return testData.map((item: any) => {
     const file = item.file
-    const imgObj: ImageObj = {
+    const imgObj: ViewerItem = {
       ...file,
       src: file.url,
       title: file.name || "",
@@ -25,7 +24,7 @@ const imagesV2 = computed<ImageObj[]>(() => {
 // console.log('🌳-----imagesV2-----', imagesV2.value);
 
 // 示例图片数据
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG",
     thumbnail: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG?x-oss-process=image/resize,l_800/format,jpg",
@@ -58,7 +57,7 @@ onMounted(() => {
 
 const init = async () => {
   // 1. 自定义 loading：高度自定义控制
-  const customLoading = (imgObj: ImageObj, idx: number) => {
+  const customLoading = (imgObj: ViewerItem, idx: number) => {
     const wrap = document.createElement("div");
     wrap.style.display = "flex";
     wrap.style.flexDirection = "column";
@@ -197,7 +196,7 @@ const init = async () => {
   };
 
   // 2. 自定义渲染节点
-  const customRender = (imgObj: ImageObj, idx: number) => {
+  const customRender = (imgObj: ViewerItem, idx: number) => {
 
 
     const box = document.createElement("div");
@@ -228,7 +227,7 @@ const init = async () => {
   const renderedContainers = new Map<number, HTMLElement>();
 
   // 3. 自定义右侧信息面板渲染
-  const infoRender = (imgObj: ImageObj, idx: number): HTMLElement => {
+  const infoRender = (imgObj: ViewerItem, idx: number): HTMLElement => {
     // 清理之前的容器（如果存在）
     const oldContainer = renderedContainers.get(idx);
     if (oldContainer) {
@@ -257,7 +256,7 @@ const init = async () => {
     // loadingNode: customLoading,
     renderNode: customRender,
     infoRender,
-    onImageLoad: (imgObj: ImageObj, idx: number) => {
+    onImageLoad: (imgObj: ViewerItem, idx: number) => {
 
       if (imgObj.type !== "live-photo") {
         // 对于普通图片，loading 已经由 customLoading 控制

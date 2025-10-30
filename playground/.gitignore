@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Monorepo
+packages/*/dist
+packages/*/node_modules
+playground/dist
+playground/node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache
+docs/node_modules

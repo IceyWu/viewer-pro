@@ -18,8 +18,8 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 const ZOOM_WHEEL_STEP = 0.1;
 
-// 图片预览组件（TypeScript 版，适配模块导出）
-export interface ImageObj {
+// 预览项接口
+export interface ViewerItem {
   src: string;
   thumbnail?: string;
   title?: string;
@@ -39,8 +39,8 @@ export interface LoadingContext {
   onImageLoaded: (callback: () => void) => void;
   // 监听图片加载失败
   onImageError: (callback: (error: string) => void) => void;
-  // 获取当前图片对象和索引
-  getCurrentImage: () => { image: ImageObj; index: number };
+  // 获取当前预览项对象和索引
+  getCurrentImage: () => { image: ViewerItem; index: number };
   // 手动触发关闭 loading
   closeLoading: () => void;
 }
@@ -51,25 +51,25 @@ export interface ViewerProOptions {
   loadingNode?:
     | HTMLElement
     | (() => HTMLElement)
-    | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+    | ((item: ViewerItem, idx: number) => HTMLElement | { 
         node: HTMLElement; 
         done: (context: LoadingContext) => void | Promise<void>;
       });
-  images?: ImageObj[];
-  renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
-  onImageLoad?: (imgObj: ImageObj, idx: number) => void;
+  images?: ViewerItem[];
+  renderNode?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
+  onImageLoad?: (item: ViewerItem, idx: number) => void;
   // 当所有内容（包括自定义渲染内容）都准备就绪后调用
-  onContentReady?: (imgObj: ImageObj, idx: number) => void;
+  onContentReady?: (item: ViewerItem, idx: number) => void;
   // 当缩放/位移/索引变化时回调（含 renderNode 模式）
   onTransformChange?: (state: {
     scale: number;
     translateX: number;
     translateY: number;
     index: number;
-    image: ImageObj | null;
+    image: ViewerItem | null;
   }) => void;
   // 自定义右侧信息面板渲染
-  infoRender?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement);
+  infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
 }
 
 export class ViewerPro {
@@ -104,28 +104,28 @@ export class ViewerPro {
   private customLoadingNode:
     | HTMLElement
     | (() => HTMLElement)
-    | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+    | ((item: ViewerItem, idx: number) => HTMLElement | { 
         node: HTMLElement; 
         done: (context: LoadingContext) => void | Promise<void>;
       })
     | null;
   private customRenderNode:
     | HTMLElement
-    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | ((item: ViewerItem, idx: number) => HTMLElement)
     | null;
   private customInfoRender:
     | HTMLElement
-    | ((imgObj: ImageObj, idx: number) => HTMLElement)
+    | ((item: ViewerItem, idx: number) => HTMLElement)
     | null;
-  private onImageLoad: ((imgObj: ImageObj, idx: number) => void) | null;
-  private onContentReady: ((imgObj: ImageObj, idx: number) => void) | null;
+  private onImageLoad: ((item: ViewerItem, idx: number) => void) | null;
+  private onContentReady: ((item: ViewerItem, idx: number) => void) | null;
   private onTransformChangeCb:
     | ((state: {
         scale: number;
         translateX: number;
         translateY: number;
         index: number;
-        image: ImageObj | null;
+        image: ViewerItem | null;
       }) => void)
     | null;
   private infoPanel!: HTMLElement; // 复用字段，但表现改为弹窗
@@ -136,7 +136,7 @@ export class ViewerPro {
   private progressSize!: HTMLElement;
   private infoPanelContent!: HTMLElement;
 
-  private images: ImageObj[] = [];
+  private images: ViewerItem[] = [];
   private currentIndex = 0;
   private scale = 1;
   private translateX = 0;
@@ -473,7 +473,7 @@ export class ViewerPro {
     });
   }
 
-  public addImages(images: ImageObj[]) {
+  public addImages(images: ViewerItem[]) {
     this.images = images;
     this.updateThumbnails();
   }
@@ -776,7 +776,7 @@ export class ViewerPro {
   }
 
   // 根据 renderNode 选项创建节点
-  private createCustomNode(img: ImageObj, idx: number): HTMLElement | null {
+  private createCustomNode(img: ViewerItem, idx: number): HTMLElement | null {
     try {
       if (!this.customRenderNode) return null;
       const rn = this.customRenderNode;
@@ -826,7 +826,7 @@ export class ViewerPro {
   }
 
   // 使用自定义渲染器填充信息面板
-  private setInfoPanelContent(img: ImageObj, idx: number) {
+  private setInfoPanelContent(img: ViewerItem, idx: number) {
     // 清空旧内容
     this.infoPanelContent.innerHTML = "";
     const node = this.createInfoNode(img, idx);
@@ -843,7 +843,7 @@ export class ViewerPro {
     }
   }
 
-  private createInfoNode(img: ImageObj, idx: number): HTMLElement | null {
+  private createInfoNode(img: ViewerItem, idx: number): HTMLElement | null {
     try {
       if (!this.customInfoRender) return null;
       const ir = this.customInfoRender;
@@ -859,7 +859,7 @@ export class ViewerPro {
   }
 
   private _loadingDoneCallback: (() => void) | null = null;
-  private showLoading(img?: ImageObj, idx?: number) {
+  private showLoading(img?: ViewerItem, idx?: number) {
     this.loadingIndicator.innerHTML = "";
     this.loadingIndicator.style.display = "flex";
     
@@ -869,7 +869,7 @@ export class ViewerPro {
         const ln = this.customLoadingNode as
           | HTMLElement
           | (() => HTMLElement)
-          | ((imgObj: ImageObj, idx: number) => HTMLElement | { 
+          | ((item: ViewerItem, idx: number) => HTMLElement | { 
               node: HTMLElement; 
               done: (context: LoadingContext) => void | Promise<void>;
             });
@@ -882,7 +882,7 @@ export class ViewerPro {
           if (arity >= 2) {
             const i = img ?? this.images[this.currentIndex];
             const k = idx ?? this.currentIndex;
-            result = (ln as (imgObj: ImageObj, idx: number) => any)(i, k);
+            result = (ln as (item: ViewerItem, idx: number) => any)(i, k);
           } else {
             result = (ln as () => any)();
           }
@@ -1107,7 +1107,7 @@ export class ViewerPro {
       translateX: number;
       translateY: number;
       index: number;
-      image: ImageObj | null;
+      image: ViewerItem | null;
     }) => void
   ) {
     const handler = (e: Event) => listener((e as CustomEvent).detail);
@@ -1270,7 +1270,7 @@ export class ViewerPro {
   }
 
   // 新增：渲染图片信息HTML
-  private renderImageInfo(img: ImageObj): string {
+  private renderImageInfo(img: ViewerItem): string {
     // 这里只做简单示例，实际可根据你的图片对象结构扩展
     let html = `<div class='info-title'>图片信息</div>`;
     if (img.title) html += `<div><b>标题：</b>${img.title}</div>`;

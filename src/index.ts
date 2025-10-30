@@ -1,1 +1,0 @@
-export { ViewerPro, type ViewerProOptions, type ImageObj } from './core/ViewerPro';

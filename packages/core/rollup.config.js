@@ -9,6 +9,18 @@ export default {
       format: 'umd',
       name: 'ViewerPro',
       sourcemap: true,
+      exports: 'named',
+    },
+    {
+      file: 'dist/ViewerPro.esm.js',
+      format: 'es',
+      sourcemap: true,
+    },
+    {
+      file: 'dist/ViewerPro.cjs.js',
+      format: 'cjs',
+      sourcemap: true,
+      exports: 'named',
     },
   ],
   plugins: [
@@ -16,4 +28,3 @@ export default {
     postcss(),
   ],
 };
-

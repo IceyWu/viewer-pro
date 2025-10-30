@@ -1,0 +1,58 @@
+{
+  "name": "viewer-pro",
+  "version": "0.1.0",
+  "description": "A modern image viewer component for web applications",
+  "author": "Icey Wu <3128006406@qq.com>",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/ViewerPro.cjs.js",
+  "module": "./dist/ViewerPro.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/ViewerPro.esm.js",
+      "require": "./dist/ViewerPro.cjs.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "rollup -c -w",
+    "build": "rollup -c",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^12.3.0",
+    "rollup": "^4.52.5",
+    "rollup-plugin-postcss": "^4.0.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "tslib": "^2.8.1"
+  },
+  "keywords": [
+    "ViewerPro",
+    "image",
+    "viewer",
+    "web",
+    "javascript",
+    "typescript",
+    "vue",
+    "react",
+    "angular"
+  ],
+  "homepage": "https://github.com/iceywu/viewer-pro#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceywu/viewer-pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iceywu/viewer-pro/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -1,18 +1,19 @@
 {
-  "name": "viewer-pro",
-  "version": "0.0.2",
-  "description": "A ViewerPro viewer for web applications",
+  "name": "viewer-pro-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A modern image viewer component for web applications",
   "author": "Icey Wu <3128006406@qq.com>",
-  "main": "dist/ViewerPro.js",
-  "types": "dist/ViewerPro.d.ts",
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "rollup -c",
-    "dev": "rollup -c -w",
-    "release": "changelogen --release && npm publish --registry https://registry.npmjs.org"
+  "license": "MIT",
+  "homepage": "https://github.com/iceywu/viewer-pro#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceywu/viewer-pro.git"
   },
+  "bugs": {
+    "url": "https://github.com/iceywu/viewer-pro/issues"
+  },
+  "funding": "https://github.com/sponsors/iceywu",
   "keywords": [
     "ViewerPro",
     "image",
@@ -22,26 +23,26 @@
     "typescript",
     "vue",
     "react",
-    "angular"
+    "angular",
+    "monorepo"
   ],
-  "funding": "https://github.com/sponsors/iceywu",
-  "homepage": "https://github.com/iceywu/viewer-pro#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/iceywu/viewer-pro.git"
+  "scripts": {
+    "dev": "pnpm --parallel dev",
+    "dev:core": "pnpm --filter viewer-pro dev",
+    "dev:playground": "pnpm --filter playground dev",
+    "dev:docs": "pnpm --filter docs dev",
+    "build": "pnpm --filter viewer-pro build",
+    "build:all": "pnpm -r build",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r exec rm -rf dist node_modules",
+    "release": "pnpm build && changeset publish"
   },
-  "bugs": {
-    "url": "https://github.com/iceywu/viewer-pro/issues"
-  },
-  "license": "MIT",
   "devDependencies": {
-    "@rollup/plugin-typescript": "^8.3.3",
-    "changelogen": "^0.5.7",
-    "rollup": "^2.77.0",
-    "rollup-plugin-postcss": "^4.0.2",
-    "typescript": "^4.7.4"
+    "@changesets/cli": "^2.29.7",
+    "typescript": "^5.9.3"
   },
-  "dependencies": {
-    "tslib": "^2.8.1"
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
   }
 }

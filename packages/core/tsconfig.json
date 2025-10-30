@@ -10,13 +10,11 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "composite": true,
-    "forceConsistentCasingInFileNames": true
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
-  "references": [
-    { "path": "./packages/core" },
-    { "path": "./playground" },
-    { "path": "./docs" }
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

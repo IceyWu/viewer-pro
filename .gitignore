@@ -14,6 +14,14 @@ demo/test
 dist-ssr
 *.local
 
+# Monorepo
+packages/*/dist
+packages/*/node_modules
+.pnpm-store
+
+# Build outputs
+*.tsbuildinfo
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
