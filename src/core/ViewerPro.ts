@@ -92,7 +92,6 @@ export class ViewerPro {
   private toggleInfoBtn!: HTMLButtonElement | null;
   private toggleThumbsBtn!: HTMLButtonElement | null;
   // 新增：侧边工具栏按钮 & 缩放滑杆等
-  private sideToolbar!: HTMLElement;
   private sideZoomInBtn!: HTMLButtonElement;
   private sideZoomOutBtn!: HTMLButtonElement;
   private sideResetZoomBtn!: HTMLButtonElement;
@@ -102,9 +101,6 @@ export class ViewerPro {
   private sideToggleThumbsBtn!: HTMLButtonElement;
   private zoomSlider!: HTMLInputElement;
   private zoomValueLabel!: HTMLElement;
-  private bottomCenterControls!: HTMLElement;
-  private miniPrevBtn!: HTMLButtonElement;
-  private miniNextBtn!: HTMLButtonElement;
   private customLoadingNode:
     | HTMLElement
     | (() => HTMLElement)
@@ -153,11 +149,20 @@ export class ViewerPro {
   private currentImageLoadStatus: { loaded: boolean; error?: string } = { loaded: false };
   private imageLoadCallbacks: Array<() => void> = [];
   private imageErrorCallbacks: Array<(error: string) => void> = [];
+  // Resource management
+  private activeBlobUrl: string | null = null;
+  private activeXHR: XMLHttpRequest | null = null;
 
   private _boundDrag!: (e: MouseEvent | Touch) => void;
   private _boundStopDrag!: () => void;
   private _boundTouchDrag!: (e: TouchEvent) => void;
   private _boundTouchEnd!: () => void;
+  private _boundKeyDown!: (e: KeyboardEvent) => void;
+  private _boundWheel!: (e: WheelEvent) => void;
+  private _boundContainerClick!: (e: MouseEvent) => void;
+  private _boundImageDblClick!: (e: MouseEvent) => void;
+  private _boundMouseDown!: (e: MouseEvent) => void;
+  private _boundTouchStart!: (e: TouchEvent) => void;
 
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
@@ -281,9 +286,6 @@ export class ViewerPro {
       "#toggleThumbnails"
     ) as HTMLButtonElement | null;
     // 侧边栏元素
-    this.sideToolbar = this.previewContainer.querySelector(
-      "#sideToolbar"
-    ) as HTMLElement;
     this.sideZoomInBtn = this.previewContainer.querySelector(
       "#sideZoomIn"
     ) as HTMLButtonElement;
@@ -312,10 +314,6 @@ export class ViewerPro {
     this.zoomValueLabel = this.previewContainer.querySelector(
       "#zoomValue"
     ) as HTMLElement;
-    // 底部迷你控制（已移除，不再查询）
-    this.bottomCenterControls = null as any;
-    this.miniPrevBtn = null as any;
-    this.miniNextBtn = null as any;
     this.imageCounter = this.previewContainer.querySelector("#imageCounter");
     this.loadingIndicator =
       this.previewContainer.querySelector("#loadingIndicator")!;
@@ -354,6 +352,33 @@ export class ViewerPro {
       this.drag(e.touches[0]);
     };
     this._boundTouchEnd = this.stopDrag.bind(this);
+    this._boundKeyDown = this.handleKeyDown.bind(this);
+    this._boundWheel = this.throttle((e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("#zoomSliderWrap")) return;
+      e.preventDefault();
+      this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
+    }, 16);
+    this._boundContainerClick = (e: MouseEvent) => {
+      if (e.target === this.previewContainer) {
+        this.close();
+      }
+    };
+    this._boundImageDblClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("#zoomSliderWrap")) return;
+      this.resetZoom();
+    };
+    this._boundMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!this.shouldStartDrag(target)) return;
+      this.startDrag(e);
+    };
+    this._boundTouchStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (!this.shouldStartDrag(target)) return;
+      if (e.touches && e.touches[0]) this.startDrag(e.touches[0]);
+    };
   }
 
   private bindEvents() {
@@ -403,41 +428,13 @@ export class ViewerPro {
       this.updateImageTransform();
     });
     // 底部迷你控制已移除
-    document.addEventListener("keydown", (e) => this.handleKeyDown(e));
+    document.addEventListener("keydown", this._boundKeyDown);
     // 将拖拽与缩放事件绑定到容器，兼容 renderNode 模式
-    this.imageContainer.addEventListener("mousedown", (e) => {
-      const target = e.target as HTMLElement;
-      if (!this.shouldStartDrag(target)) return;
-      this.startDrag(e);
-    });
-    this.imageContainer.addEventListener(
-      "touchstart",
-      (e) => {
-        const target = e.target as HTMLElement;
-        if (!this.shouldStartDrag(target)) return;
-        if (e.touches && e.touches[0]) this.startDrag(e.touches[0]);
-      },
-      { passive: true }
-    );
-    this.imageContainer.addEventListener(
-      "wheel",
-      this.throttle((e: WheelEvent) => {
-        const target = e.target as HTMLElement;
-        if (target.closest("#zoomSliderWrap")) return; // 让滑杆自身处理滚轮
-        e.preventDefault();
-        this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
-      }, 16)
-    );
-    this.previewContainer.addEventListener("click", (e) => {
-      if (e.target === this.previewContainer) {
-        this.close();
-      }
-    });
-    this.imageContainer.addEventListener("dblclick", (e) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("#zoomSliderWrap")) return;
-      this.resetZoom();
-    });
+    this.imageContainer.addEventListener("mousedown", this._boundMouseDown);
+    this.imageContainer.addEventListener("touchstart", this._boundTouchStart, { passive: true });
+    this.imageContainer.addEventListener("wheel", this._boundWheel);
+    this.previewContainer.addEventListener("click", this._boundContainerClick);
+    this.imageContainer.addEventListener("dblclick", this._boundImageDblClick);
     // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
     this.infoCollapseBtn.addEventListener("click", (evt) => {
       evt.stopPropagation();
@@ -590,6 +587,32 @@ export class ViewerPro {
   }
 
   private updatePreview() {
+    // Abort previous XHR request if exists
+    if (this.activeXHR) {
+      try {
+        this.activeXHR.abort();
+      } catch (e) {
+        console.warn("Failed to abort XHR:", e);
+      }
+      this.activeXHR = null;
+    }
+
+    // Revoke previous blob URL if exists
+    if (this.activeBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.activeBlobUrl);
+      } catch (e) {
+        console.warn("Failed to revoke blob URL:", e);
+      }
+      this.activeBlobUrl = null;
+    }
+
+    // Reset loading state to prevent race conditions
+    this.currentImageLoadStatus = { loaded: false };
+    this.imageLoadCallbacks = [];
+    this.imageErrorCallbacks = [];
+    this._loadingDoneCallback = null;
+
     const currentImage = this.images[this.currentIndex];
   this.showLoading(currentImage, this.currentIndex);
     this.errorMessage.style.display = "none";
@@ -615,14 +638,8 @@ export class ViewerPro {
           (node as HTMLElement).style.height = "100%";
         } catch {}
         this.imageContainer.appendChild(node);
-        // 若之前存在 blob 图片，进行清理
-        if (
-          this.previewImage.src &&
-          this.previewImage.src.startsWith("blob:")
-        ) {
-          try {
-            URL.revokeObjectURL(this.previewImage.src);
-          } catch {}
+        // Clear previewImage src if it was using a blob
+        if (this.previewImage.src) {
           this.previewImage.src = "";
         }
         // 在自定义渲染模式下：监听渲染节点中的图片加载
@@ -672,6 +689,7 @@ export class ViewerPro {
     }
 
     const xhr = new XMLHttpRequest();
+    this.activeXHR = xhr; // Store reference for cleanup
     const thisToken = ++this.imageLoadToken;
     xhr.open("GET", currentImage.src, true);
     xhr.responseType = "blob";
@@ -692,10 +710,10 @@ export class ViewerPro {
         const blob = xhr.response;
         const url = URL.createObjectURL(blob);
 
-        // 清理之前的blob URL
-        if (this.previewImage.src.startsWith("blob:")) {
-          URL.revokeObjectURL(this.previewImage.src);
-        }
+        // Store new blob URL reference
+        this.activeBlobUrl = url;
+        // Clear XHR reference as it's complete
+        this.activeXHR = null;
 
         this.previewImage.src = url;
         this.previewImage.style.display = "block";
@@ -706,9 +724,10 @@ export class ViewerPro {
         );
         if (oldNode) oldNode.remove();
 
-        this.previewImage = document.getElementById(
-          "previewImage"
-        ) as HTMLImageElement;
+        const previewImg = document.getElementById("previewImage");
+        if (previewImg) {
+          this.previewImage = previewImg as HTMLImageElement;
+        }
         this.updateImageTransform();
 
         // 更新图片加载状态
@@ -722,7 +741,8 @@ export class ViewerPro {
           }
         });
       } else {
-        this.handleImageError();
+        this.activeXHR = null;
+        this.handleImageError('http', xhr.status);
       }
 
       if (this.onImageLoad) {
@@ -740,12 +760,14 @@ export class ViewerPro {
 
     xhr.onerror = () => {
       if (thisToken !== this.imageLoadToken) return;
-      this.handleImageError();
+      this.activeXHR = null;
+      this.handleImageError('network');
     };
 
     xhr.ontimeout = () => {
       if (thisToken !== this.imageLoadToken) return;
-      this.handleImageError();
+      this.activeXHR = null;
+      this.handleImageError('timeout');
     };
 
     xhr.send();
@@ -770,18 +792,33 @@ export class ViewerPro {
     }
   }
 
-  private handleImageError() {
+  private handleImageError(errorType: 'network' | 'timeout' | 'http' = 'network', httpStatus?: number) {
     this.hideProgress();
     this.hideLoading();
     this.errorMessage.style.display = "block";
-    this.errorMessage.textContent = "图片加载失败，请检查网络连接或图片地址";
+    
+    let errorMessage: string;
+    switch (errorType) {
+      case 'timeout':
+        errorMessage = "图片加载超时，请重试";
+        break;
+      case 'http':
+        errorMessage = `图片加载失败 (HTTP ${httpStatus || 'error'})`;
+        break;
+      case 'network':
+      default:
+        errorMessage = "图片加载失败，请检查网络连接或图片地址";
+        break;
+    }
+    
+    this.errorMessage.textContent = errorMessage;
     
     // 更新图片加载状态
-    this.currentImageLoadStatus = { loaded: false, error: "图片加载失败" };
+    this.currentImageLoadStatus = { loaded: false, error: errorMessage };
     // 触发图片加载失败回调
     this.imageErrorCallbacks.forEach(callback => {
       try {
-        callback("图片加载失败");
+        callback(errorMessage);
       } catch (e) {
         console.warn("Image error callback error:", e);
       }
@@ -825,12 +862,6 @@ export class ViewerPro {
   private showLoading(img?: ImageObj, idx?: number) {
     this.loadingIndicator.innerHTML = "";
     this.loadingIndicator.style.display = "flex";
-    this._loadingDoneCallback = null;
-    
-    // 重置图片加载状态
-    this.currentImageLoadStatus = { loaded: false };
-    this.imageLoadCallbacks = [];
-    this.imageErrorCallbacks = [];
     
     if (this.customLoadingNode) {
       try {
@@ -1006,7 +1037,9 @@ export class ViewerPro {
   }
 
   private updateImageTransform() {
-    this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    if (this.previewImage) {
+      this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    }
     // 同步缩放 UI
     if (this.zoomSlider) {
       const v = Number(this.zoomSlider.value);
@@ -1297,42 +1330,44 @@ export class ViewerPro {
 
   // 新增：清理资源的方法
   public destroy() {
-    // 清理事件监听器
-    this.closeButton.removeEventListener("click", () => this.close());
-    this.prevButton.removeEventListener("click", () => this.navigate(-1));
-    this.nextButton.removeEventListener("click", () => this.navigate(1));
-    if (this.zoomInButton)
-      this.zoomInButton.removeEventListener("click", () =>
-        this.zoom(ZOOM_STEP)
-      );
-    if (this.zoomOutButton)
-      this.zoomOutButton.removeEventListener("click", () =>
-        this.zoom(-ZOOM_STEP)
-      );
-    if (this.resetZoomButton)
-      this.resetZoomButton.removeEventListener("click", () => this.resetZoom());
-    if (this.fullscreenButton)
-      this.fullscreenButton.removeEventListener("click", () =>
-        this.toggleFullscreen()
-      );
-    if (this.downloadButton)
-      this.downloadButton.removeEventListener("click", () =>
-        this.downloadCurrentImage()
-      );
-    document.removeEventListener("keydown", (e) => this.handleKeyDown(e));
-
     // 清理拖拽相关事件
     this.stopDrag();
+
+    // 清理事件监听器 - 使用绑定的处理器
+    document.removeEventListener("keydown", this._boundKeyDown);
+    this.imageContainer.removeEventListener("mousedown", this._boundMouseDown);
+    this.imageContainer.removeEventListener("touchstart", this._boundTouchStart);
+    this.imageContainer.removeEventListener("wheel", this._boundWheel);
+    this.previewContainer.removeEventListener("click", this._boundContainerClick);
+    this.imageContainer.removeEventListener("dblclick", this._boundImageDblClick);
+
+    // 清理资源
+    if (this.activeBlobUrl) {
+      try {
+        URL.revokeObjectURL(this.activeBlobUrl);
+      } catch (e) {
+        console.warn("Failed to revoke blob URL:", e);
+      }
+      this.activeBlobUrl = null;
+    }
+
+    if (this.activeXHR) {
+      try {
+        this.activeXHR.abort();
+      } catch (e) {
+        console.warn("Failed to abort XHR:", e);
+      }
+      this.activeXHR = null;
+    }
 
     // 从DOM中移除容器
     if (this.previewContainer && this.previewContainer.parentNode) {
       this.previewContainer.parentNode.removeChild(this.previewContainer);
     }
 
-    // 清理图片资源
-    if (this.previewImage.src.startsWith("blob:")) {
-      URL.revokeObjectURL(this.previewImage.src);
-    }
+    // 清理回调数组
+    this.imageLoadCallbacks = [];
+    this.imageErrorCallbacks = [];
 
     // 重置状态
     this.images = [];
@@ -1343,6 +1378,8 @@ export class ViewerPro {
     this.isDragging = false;
     this.isFullscreen = false;
     this.imageLoadToken = 0;
+    this.currentImageLoadStatus = { loaded: false };
+    this._loadingDoneCallback = null;
   }
 }
 

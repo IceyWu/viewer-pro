@@ -1,42 +1,53 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from "vue";
+import { ref, onMounted, nextTick, computed, h, render } from "vue";
 import { ViewerPro, type ImageObj } from "../../src/index";
 import "../../src/core/ViewerPro.css";
 import { LivePhotoViewer } from "live-photo";
+import testData from "./assets/data.json";
+import ImageMetaPanel from "./components/ImageMetaPanel.vue";
+const imagesV2 = computed<ImageObj[]>(() => {
+  return testData.map((item: any) => {
+    const file = item.file
+    const imgObj: ImageObj = {
+      ...file,
+      src: file.url,
+      title: file.name || "",
+      thumbnail: `${file.url}?x-oss-process=image/resize,l_800/format,jpg`,
+      type: !!file.videoSrc ? "live-photo" : file.type,
+    };
+    if (imgObj.type === "live-photo") {
+      imgObj.photoSrc = file.url;
+      imgObj.videoSrc = file.videoSrc;
+    }
+    return imgObj;
+  });
+});
+// console.log('🌳-----imagesV2-----', imagesV2.value);
 
 // 示例图片数据
 const images: ImageObj[] = [
   {
-    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
-    thumbnail: "https://picsum.photos/id/1015/400/300",
+    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG",
+    thumbnail: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG?x-oss-process=image/resize,l_800/format,jpg",
     photoSrc:
-      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160256.JPEG",
+      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG",
     videoSrc:
-      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1733058160657.MOV",
-    title: "自然风景",
+      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483140652.MOV",
+    title: "IMG_3846.JPEG",
     type: "live-photo",
   },
   {
-    src: "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
+    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483141159.JPEG",
     thumbnail:
-      "https://nest-js.oss-accelerate.aliyuncs.com/nestTest/1/1746282136181.JPG",
-    title: "自然风景",
+      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483141159.JPEG?x-oss-process=image/resize,l_800/format,jpg",
+    title: "IMG_3856.JPEG",
   },
   {
-    src: "https://picsum.photos/id/1039/1200/800",
-    thumbnail: "https://picsum.photos/id/1039/400/300",
-    title: "森林小径",
+    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483142243.JPEG",
+    thumbnail: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483142243.JPEG?x-oss-process=image/resize,l_800/format,jpg",
+    title: "IMG_3850.JPEG",
   },
-  {
-    src: "https://picsum.photos/id/1043/1200/800",
-    thumbnail: "https://picsum.photos/id/1043/400/300",
-    title: "海岸风景",
-  },
-  {
-    src: "https://picsum.photos/id/1048/1200/800",
-    thumbnail: "https://picsum.photos/id/1048/400/300",
-    title: "城市夜景",
-  },
+  
 ];
 
 const viewer = ref<ViewerPro | null>(null);
@@ -207,39 +218,47 @@ const init = async () => {
           <img src="${
             imgObj.src
           }" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
-          <div style="color:#fff;margin-top:8px;">自定义渲染：${
-            imgObj.title || ""
-          }</div>
         `;
     }
 
     return box;
   };
 
+  // 存储已渲染的 Vue 组件容器，用于清理
+  const renderedContainers = new Map<number, HTMLElement>();
+
   // 3. 自定义右侧信息面板渲染
   const infoRender = (imgObj: ImageObj, idx: number): HTMLElement => {
-    const wrap = document.createElement("div");
-    wrap.id = `custom-info-${idx}`;
-    wrap.style.padding = "8px 0";
-    wrap.innerHTML = `
-      <div style="font-weight:600;margin-bottom:8px;">自定义信息</div>
-      <div><b>标题：</b>${imgObj.title || "-"}</div>
-      <div><b>类型：</b>${imgObj.type || "image"}</div>
-      <div><b>源地址：</b><a href="${
-        imgObj.src
-      }" target="_blank" style="color:#60a5fa;">打开</a></div>
-      <div style="margin-top:8px;"><b>缩放：</b><span id="info-scale-${idx}">100%</span></div>
-    `;
-    return wrap;
+    // 清理之前的容器（如果存在）
+    const oldContainer = renderedContainers.get(idx);
+    if (oldContainer) {
+      render(null, oldContainer); // 卸载 Vue 组件
+    }
+    
+    // 创建一个新的容器元素
+    const container = document.createElement("div");
+    container.id = `custom-info-${idx}`;
+    container.style.width = "100%";
+    container.style.height = "100%";
+    
+    // 使用 Vue 的 render 函数将 Vue 组件渲染到容器中
+    const vnode = h(ImageMetaPanel, { data: imgObj });
+    render(vnode, container);
+    
+    // 保存容器引用以便后续清理
+    renderedContainers.set(idx, container);
+    
+    return container;
   };
 
   await nextTick();
   viewer.value = new ViewerPro({
     // 使用按图片/索引的动态 loading
-    loadingNode: customLoading,
+    // loadingNode: customLoading,
     renderNode: customRender,
     infoRender,
     onImageLoad: (imgObj: ImageObj, idx: number) => {
+
       if (imgObj.type !== "live-photo") {
         // 对于普通图片，loading 已经由 customLoading 控制
         return;
@@ -259,6 +278,7 @@ const init = async () => {
         container: container,
         width: 300,
         height: 300,
+        // autoplay: false,
         imageCustomization: {
           styles: {
             objectFit: "cover",
@@ -287,7 +307,8 @@ const init = async () => {
       if (scaleEl) scaleEl.textContent = `${Math.round(scale * 100)}%`;
     },
   });
-  viewer.value.addImages(images);
+  // viewer.value.addImages(images);
+  viewer.value.addImages(imagesV2.value);
   viewer.value.init();
 };
 
@@ -309,7 +330,7 @@ function openPreview(idx: number) {
     </p>
     <div class="image-grid">
       <div
-        v-for="(img, idx) in images"
+        v-for="(img, idx) in imagesV2"
         :key="img.src"
         class="image-grid-item"
         @click="openPreview(idx)"
