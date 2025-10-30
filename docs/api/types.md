@@ -2,12 +2,12 @@
 
 ViewerPro 的 TypeScript 类型定义。
 
-## ImageObj
+## ViewerItem
 
-图片对象接口。
+预览项接口（支持图片、Live Photo、视频等多种媒体类型）。
 
 ```typescript
-interface ImageObj {
+interface ViewerItem {
   src: string              // 图片完整地址
   thumbnail?: string       // 缩略图地址
   title?: string          // 图片标题
@@ -21,7 +21,7 @@ interface ImageObj {
 ### 示例
 
 ```typescript
-const image: ImageObj = {
+const image: ViewerItem = {
   src: 'https://example.com/image.jpg',
   thumbnail: 'https://example.com/thumb.jpg',
   title: '美丽的风景',
@@ -35,12 +35,12 @@ ViewerPro 构造函数的配置选项。
 
 ```typescript
 interface ViewerProOptions {
-  images?: ImageObj[]
-  loadingNode?: HTMLElement | (() => HTMLElement) | ((imgObj: ImageObj, idx: number) => HTMLElement | LoadingNodeResult)
-  renderNode?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement)
-  infoRender?: HTMLElement | ((imgObj: ImageObj, idx: number) => HTMLElement)
-  onImageLoad?: (imgObj: ImageObj, idx: number) => void
-  onContentReady?: (imgObj: ImageObj, idx: number) => void
+  images?: ViewerItem[]
+  loadingNode?: HTMLElement | (() => HTMLElement) | ((item: ViewerItem, idx: number) => HTMLElement | LoadingNodeResult)
+  renderNode?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement)
+  infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement)
+  onImageLoad?: (item: ViewerItem, idx: number) => void
+  onContentReady?: (item: ViewerItem, idx: number) => void
   onTransformChange?: (state: TransformState) => void
 }
 ```
@@ -49,9 +49,9 @@ interface ViewerProOptions {
 
 #### images
 
-图片数组。
+预览项数组。
 
-- **类型:** `ImageObj[]`
+- **类型:** `ViewerItem[]`
 - **可选:** 是
 - **默认值:** `[]`
 
@@ -109,16 +109,16 @@ const loadingWithControl = (imgObj, idx) => {
 
 #### onImageLoad
 
-图片加载完成回调。
+预览项加载完成回调。
 
-- **类型:** `(imgObj: ImageObj, idx: number) => void`
+- **类型:** `(item: ViewerItem, idx: number) => void`
 - **可选:** 是
 
 #### onContentReady
 
 所有内容（包括自定义渲染内容）准备就绪后调用。
 
-- **类型:** `(imgObj: ImageObj, idx: number) => void`
+- **类型:** `(item: ViewerItem, idx: number) => void`
 - **可选:** 是
 
 #### onTransformChange
@@ -138,7 +138,7 @@ interface LoadingContext {
   getMediaLoadingStatus: () => Promise<{ images: boolean[]; videos: boolean[]; audios: boolean[] }>
   onImageLoaded: (callback: () => void) => void
   onImageError: (callback: (error: string) => void) => void
-  getCurrentImage: () => { image: ImageObj; index: number }
+  getCurrentImage: () => { image: ViewerItem; index: number }
   closeLoading: () => void
 }
 ```
@@ -173,9 +173,9 @@ interface LoadingContext {
 
 #### getCurrentImage()
 
-获取当前图片对象和索引。
+获取当前预览项对象和索引。
 
-**返回值:** `{ image: ImageObj; index: number }`
+**返回值:** `{ image: ViewerItem; index: number }`
 
 #### closeLoading()
 
@@ -189,9 +189,9 @@ interface LoadingContext {
 interface TransformState {
   scale: number          // 缩放比例
   translateX: number     // X 轴位移
-  translateY: number     // Y 轴位移
-  index: number          // 当前图片索引
-  image: ImageObj | null // 当前图片对象
+  translateY: number      // Y 轴位移
+  index: number           // 当前预览项索引
+  image: ViewerItem | null // 当前预览项对象
 }
 ```
 

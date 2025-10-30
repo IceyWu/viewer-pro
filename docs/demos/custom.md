@@ -2,12 +2,26 @@
 
 ViewerPro 提供了强大的自定义能力，让你可以根据需求定制各种功能。
 
+## 在线演示
+
+<script setup>
+import { defineClientComponent } from 'vitepress'
+
+const CustomDemo = defineClientComponent(() => {
+  return import('../.vitepress/components/CustomDemo.vue')
+})
+</script>
+
+<ClientOnly>
+  <CustomDemo />
+</ClientOnly>
+
 ## 自定义 Loading
 
 自定义加载动画和提示：
 
 ```typescript
-const customLoading = (imgObj: ImageObj, idx: number) => {
+const customLoading = (item: ViewerItem, idx: number) => {
   const wrap = document.createElement('div')
   wrap.style.cssText = `
     display: flex;
@@ -19,7 +33,7 @@ const customLoading = (imgObj: ImageObj, idx: number) => {
   
   wrap.innerHTML = `
     <div class="spinner"></div>
-    <span>加载 ${imgObj.title}...</span>
+    <span>加载 ${item.title}...</span>
     <div style="font-size: 12px; opacity: 0.8;">
       第 ${idx + 1} 张图片
     </div>
@@ -39,7 +53,7 @@ const viewer = new ViewerPro({
 使用 LoadingContext 实现高度自定义的加载控制：
 
 ```typescript
-const advancedLoading = (imgObj: ImageObj, idx: number) => {
+const advancedLoading = (item: ViewerItem, idx: number) => {
   const node = document.createElement('div')
   node.innerHTML = `
     <div class="loading-spinner"></div>
@@ -83,7 +97,7 @@ const viewer = new ViewerPro({
 自定义图片的渲染方式：
 
 ```typescript
-const customRender = (imgObj: ImageObj, idx: number) => {
+const customRender = (imgObj: ViewerItem, idx: number) => {
   const box = document.createElement('div')
   box.style.cssText = `
     display: flex;
@@ -127,7 +141,7 @@ const viewer = new ViewerPro({
 自定义右侧信息面板的内容：
 
 ```typescript
-const customInfo = (imgObj: ImageObj, idx: number) => {
+const customInfo = (imgObj: ViewerItem, idx: number) => {
   const panel = document.createElement('div')
   panel.style.cssText = `
     padding: 20px;

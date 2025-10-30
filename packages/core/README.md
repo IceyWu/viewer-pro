@@ -15,9 +15,9 @@ yarn add viewer-pro
 ## 快速开始
 
 ```typescript
-import { ViewerPro, type ImageObj } from 'viewer-pro';
+import { ViewerPro, type ViewerItem } from 'viewer-pro';
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: 'https://example.com/image1.jpg',
     thumbnail: 'https://example.com/thumb1.jpg',
@@ -43,7 +43,7 @@ viewer.open(0);
 
 ## 文档
 
-完整文档请访问：[ViewerPro 文档站点](https://iceywu.github.io/viewer-pro/)
+完整文档请访问：[ViewerPro 文档站点](https://viewer-pro.netlify.app/)
 
 ## License
 

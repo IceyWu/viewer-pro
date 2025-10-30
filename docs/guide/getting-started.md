@@ -29,9 +29,9 @@ yarn add viewer-pro
 ```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ViewerPro, type ImageObj } from 'viewer-pro'
+import { ViewerPro, type ViewerItem } from 'viewer-pro'
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: 'https://example.com/image1.jpg',
     thumbnail: 'https://example.com/thumb1.jpg',

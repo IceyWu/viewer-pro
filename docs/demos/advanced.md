@@ -55,9 +55,9 @@ const unsubscribe = viewer.onTransform((state) => {
 ```vue
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { ViewerPro, type ImageObj } from 'viewer-pro'
+import { ViewerPro, type ViewerItem } from 'viewer-pro'
 
-const images: ImageObj[] = [/* ... */]
+const images: ViewerItem[] = [/* ... */]
 const viewer = ref<ViewerPro | null>(null)
 
 const state = reactive({
@@ -65,7 +65,7 @@ const state = reactive({
   translateX: 0,
   translateY: 0,
   currentIndex: 0,
-  currentImage: null as ImageObj | null
+  currentImage: null as ViewerItem | null
 })
 
 let unsubscribe: (() => void) | null = null
@@ -119,7 +119,7 @@ onUnmounted(() => {
 ```typescript
 import { LivePhotoViewer } from 'live-photo'
 
-const customRender = (imgObj: ImageObj, idx: number) => {
+const customRender = (imgObj: ViewerItem, idx: number) => {
   const box = document.createElement('div')
   box.id = `live-photo-container-${idx}`
   return box

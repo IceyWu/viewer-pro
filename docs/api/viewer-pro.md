@@ -64,7 +64,7 @@ viewer.addImages([
 ```
 
 **参数:**
-- `images: ImageObj[]` - 图片对象数组
+- `images: ViewerItem[]` - 预览项对象数组
 
 ### getState()
 
@@ -88,7 +88,7 @@ const state = viewer.getState()
   translateX: number
   translateY: number
   index: number
-  image: ImageObj | null
+  image: ViewerItem | null
 }
 ```
 

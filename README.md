@@ -42,9 +42,9 @@ yarn add viewer-pro
 ```vue
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { ViewerPro, type ImageObj } from "viewer-pro";
+import { ViewerPro, type ViewerItem } from "viewer-pro";
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: "https://example.com/1.jpg",
     thumbnail: "https://example.com/thumb1.jpg",
@@ -103,12 +103,12 @@ function openPreview(idx: number) {
 
 | 参数           | 说明                         | 类型                                        |
 | -------------- | ---------------------------- | ------------------------------------------- |
-| images         | 图片数组                      | `ImageObj[]`                                |
+| images         | 图片数组                      | `ViewerItem[]`                                |
 | loadingNode    | 自定义 loading 节点           | `HTMLElement` \| `() => HTMLElement`        |
 | renderNode     | 自定义图片渲染节点            | `HTMLElement` \| `(imgObj, idx) => HTMLElement` |
 | onImageLoad    | 图片加载完成回调              | `(imgObj, idx) => void`                     |
 
-### ImageObj
+### ViewerItem
 
 | 字段      | 说明         | 类型     |
 | --------- | ------------ | -------- |
@@ -120,16 +120,16 @@ function openPreview(idx: number) {
 
 - `open(index: number)`：打开指定索引的图片预览
 - `close()`：关闭预览
-- `addImages(images: ImageObj[])`：动态添加图片
+- `addImages(images: ViewerItem[])`：动态添加图片
 - `init()`：初始化事件绑定
 
 ## 📚 文档
 
-完整文档请访问：[ViewerPro 文档站点](https://iceywu.github.io/viewer-pro/)
+完整文档请访问：[ViewerPro 文档站点](https://viewer-pro.netlify.app/)
 
 ## 🖼️ 示例
 
-- [在线演示](https://iceywu.github.io/viewer-pro/demos/basic)
+- [在线演示](https://viewer-pro.netlify.app/demos/basic)
 - [Playground](./playground)
 
 ## 🏗️ 项目结构

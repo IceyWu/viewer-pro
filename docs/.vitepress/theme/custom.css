@@ -1,0 +1,41 @@
+/* 自定义样式 */
+.demo-container {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.demo-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.demo-image-item {
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.2s;
+  border: 2px solid transparent;
+}
+
+.demo-image-item:hover {
+  transform: scale(1.05);
+  border-color: var(--vp-c-brand);
+}
+
+.demo-image-item img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  display: block;
+}
+
+.demo-image-title {
+  padding: 8px;
+  background: var(--vp-c-bg-soft);
+  text-align: center;
+  font-size: 14px;
+}

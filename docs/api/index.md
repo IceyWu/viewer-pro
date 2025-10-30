@@ -8,7 +8,7 @@ ViewerPro 提供了简洁而强大的 API，让你可以轻松实现各种图片
 
 ## 类型定义
 
-- [ImageObj](/api/types#imageobj) - 图片对象接口
+- [ViewerItem](/api/types#vieweritem) - 预览项接口
 - [ViewerProOptions](/api/types#viewerprooptions) - 配置选项接口
 - [LoadingContext](/api/types#loadingcontext) - 加载上下文接口
 
@@ -23,9 +23,9 @@ new ViewerPro(options?: ViewerProOptions)
 ### 实例方法
 
 - `init()` - 初始化事件绑定
-- `open(index: number)` - 打开指定索引的图片
+- `open(index: number)` - 打开指定索引的预览项
 - `close()` - 关闭预览
-- `addImages(images: ImageObj[])` - 添加图片
+- `addImages(images: ViewerItem[])` - 添加预览项
 - `getState()` - 获取当前状态
 - `destroy()` - 销毁实例
 

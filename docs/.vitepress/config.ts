@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitepress'
+import viteConfig from './vite.config'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  vite: viteConfig,
   title: "ViewerPro",
   description: "现代化的图片预览组件",
   lang: 'zh-CN',

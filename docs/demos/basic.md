@@ -2,14 +2,28 @@
 
 本页面展示 ViewerPro 的基础使用方法。
 
+## 在线演示
+
+<script setup>
+import { defineClientComponent } from 'vitepress'
+
+const BasicDemo = defineClientComponent(() => {
+  return import('../.vitepress/components/BasicDemo.vue')
+})
+</script>
+
+<ClientOnly>
+  <BasicDemo />
+</ClientOnly>
+
 ## 简单示例
 
 最基本的使用方式：
 
 ```typescript
-import { ViewerPro, type ImageObj } from 'viewer-pro'
+import { ViewerPro, type ViewerItem } from 'viewer-pro'
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: 'https://example.com/image1.jpg',
     thumbnail: 'https://example.com/thumb1.jpg',
@@ -36,9 +50,9 @@ viewer.init()
 ```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ViewerPro, type ImageObj } from 'viewer-pro'
+import { ViewerPro, type ViewerItem } from 'viewer-pro'
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: 'https://example.com/image1.jpg',
     thumbnail: 'https://example.com/thumb1.jpg',
@@ -108,9 +122,9 @@ function openPreview(index: number) {
 
 ```tsx
 import { useEffect, useRef } from 'react'
-import { ViewerPro, type ImageObj } from 'viewer-pro'
+import { ViewerPro, type ViewerItem } from 'viewer-pro'
 
-const images: ImageObj[] = [
+const images: ViewerItem[] = [
   {
     src: 'https://example.com/image1.jpg',
     thumbnail: 'https://example.com/thumb1.jpg',
