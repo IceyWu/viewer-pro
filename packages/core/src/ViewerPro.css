@@ -48,44 +48,44 @@
 /* Light Theme */
 .image-preview-container[data-theme="light"] {
   /* Colors - Light Theme */
-  --vp-primary-bg: rgba(255, 255, 255, 0.95);
-  --vp-secondary-bg: rgba(255, 255, 255, 0.85);
-  --vp-overlay-bg: rgba(240, 240, 240, 0.75);
-  --vp-text-primary: #1a1a1a;
-  --vp-text-secondary: rgba(26, 26, 26, 0.85);
-  --vp-border-color: rgba(0, 0, 0, 0.12);
-  --vp-hover-bg: rgba(0, 0, 0, 0.08);
-  --vp-active-border: #2563eb;
-  --vp-thumbnail-bg: #f5f5f5;
-  --vp-error-bg: rgba(220, 38, 38, 0.15);
-  --vp-error-border: rgba(220, 38, 38, 0.3);
+  --vp-primary-bg: rgba(248, 250, 252, 0.95);
+  --vp-secondary-bg: rgba(248, 250, 252, 0.88);
+  --vp-overlay-bg: rgba(226, 232, 240, 0.65);
+  --vp-text-primary: #0f172a;
+  --vp-text-secondary: rgba(15, 23, 42, 0.85);
+  --vp-border-color: rgba(148, 163, 184, 0.25);
+  --vp-hover-bg: rgba(100, 116, 139, 0.12);
+  --vp-active-border: #3b82f6;
+  --vp-thumbnail-bg: #f1f5f9;
+  --vp-error-bg: rgba(239, 68, 68, 0.12);
+  --vp-error-border: rgba(239, 68, 68, 0.25);
   
   /* Shadows - Light Theme */
-  --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
-  --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+  --vp-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --vp-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.1);
+  --vp-shadow-lg: 0 10px 40px rgba(15, 23, 42, 0.12);
 }
 
 /* Auto Theme - follows system preference */
 @media (prefers-color-scheme: light) {
   .image-preview-container[data-theme="auto"] {
     /* Colors - Light Theme */
-    --vp-primary-bg: rgba(255, 255, 255, 0.95);
-    --vp-secondary-bg: rgba(255, 255, 255, 0.85);
-    --vp-overlay-bg: rgba(240, 240, 240, 0.75);
-    --vp-text-primary: #1a1a1a;
-    --vp-text-secondary: rgba(26, 26, 26, 0.85);
-    --vp-border-color: rgba(0, 0, 0, 0.12);
-    --vp-hover-bg: rgba(0, 0, 0, 0.08);
-    --vp-active-border: #2563eb;
-    --vp-thumbnail-bg: #f5f5f5;
-    --vp-error-bg: rgba(220, 38, 38, 0.15);
-    --vp-error-border: rgba(220, 38, 38, 0.3);
+    --vp-primary-bg: rgba(248, 250, 252, 0.95);
+    --vp-secondary-bg: rgba(248, 250, 252, 0.88);
+    --vp-overlay-bg: rgba(226, 232, 240, 0.65);
+    --vp-text-primary: #0f172a;
+    --vp-text-secondary: rgba(15, 23, 42, 0.85);
+    --vp-border-color: rgba(148, 163, 184, 0.25);
+    --vp-hover-bg: rgba(100, 116, 139, 0.12);
+    --vp-active-border: #3b82f6;
+    --vp-thumbnail-bg: #f1f5f9;
+    --vp-error-bg: rgba(239, 68, 68, 0.12);
+    --vp-error-border: rgba(239, 68, 68, 0.25);
     
     /* Shadows - Light Theme */
-    --vp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
-    --vp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
-    --vp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+    --vp-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.08);
+    --vp-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.1);
+    --vp-shadow-lg: 0 10px 40px rgba(15, 23, 42, 0.12);
   }
 }
 
@@ -837,17 +837,18 @@
    Light Theme Specific Overrides
    ============================================ */
 .image-preview-container[data-theme="light"] .side-toolbar {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.85) 100%
-  );
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .image-preview-container[data-theme="light"] .image-preview-overlay {
-  /* background-color: rgba(240, 240, 240, 0.75); */
-  background: #000;
-  opacity: 0.5;
+  background: linear-gradient(
+    135deg,
+    rgba(226, 232, 240, 0.7) 0%,
+    rgba(203, 213, 225, 0.65) 100%
+  );
 }
 
 .image-preview-container[data-theme="light"] .image-loading {
@@ -866,9 +867,9 @@
 .image-preview-container[data-theme="light"] .thumbnail-nav {
   background: linear-gradient(
     to top,
-    rgba(255, 255, 255, 0.9) 0%,
-    rgba(255, 255, 255, 0.6) 70%,
-    rgba(255, 255, 255, 0) 100%
+    rgba(248, 250, 252, 0.95) 0%,
+    rgba(241, 245, 249, 0.7) 70%,
+    rgba(241, 245, 249, 0) 100%
   );
 }
 
@@ -900,17 +901,18 @@
 /* Auto theme - Light mode */
 @media (prefers-color-scheme: light) {
   .image-preview-container[data-theme="auto"] .side-toolbar {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(255, 255, 255, 0.85) 100%
-    );
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.6);
   }
 
   .image-preview-container[data-theme="auto"] .image-preview-overlay {
-    /* background-color: rgba(240, 240, 240, 0.75); */
-    background: #000;
-  opacity: 0.5;
+    background: linear-gradient(
+      135deg,
+      rgba(226, 232, 240, 0.7) 0%,
+      rgba(203, 213, 225, 0.65) 100%
+    );
   }
 
   .image-preview-container[data-theme="auto"] .image-loading {
