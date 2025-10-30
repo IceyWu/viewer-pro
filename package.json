@@ -32,8 +32,11 @@
     "dev:playground": "pnpm --filter playground dev",
     "dev:docs": "pnpm --filter docs dev",
     "build": "pnpm --filter viewer-pro build",
-    "build:all": "pnpm -r build",
-    "type-check": "pnpm -r type-check",
+    "build:core": "pnpm --filter viewer-pro build",
+    "build:playground": "pnpm --filter playground build",
+    "build:docs": "pnpm --filter docs build",
+    "build:all": "pnpm --filter viewer-pro build && pnpm --filter docs build",
+    "type-check": "pnpm --filter viewer-pro type-check",
     "clean": "pnpm -r exec rm -rf dist node_modules",
     "release": "pnpm build && changeset publish"
   },
