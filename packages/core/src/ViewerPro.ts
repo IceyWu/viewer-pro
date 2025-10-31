@@ -10,13 +10,17 @@ import {
   downloadIcon,
   infoIcon,
   gridIcon,
+  rotateLeftIcon,
+  rotateRightIcon,
 } from "./icons";
 
 // Constants for better maintainability
 const ZOOM_STEP = 0.2;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
-const ZOOM_WHEEL_STEP = 0.1;
+const ZOOM_WHEEL_BASE_STEP = 0.15;      // 基础步长（增加 50%）
+const ZOOM_WHEEL_MAX_STEP = 0.3;        // 最大步长
+const ZOOM_WHEEL_SPEED_MULTIPLIER = 0.01; // 速度乘数
 
 // 预览项接口
 export interface ViewerItem {
@@ -65,6 +69,7 @@ export interface ViewerProOptions {
     scale: number;
     translateX: number;
     translateY: number;
+    rotation: number;
     index: number;
     image: ViewerItem | null;
   }) => void;
@@ -72,6 +77,15 @@ export interface ViewerProOptions {
   infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
   // 主题设置: 'dark' | 'light' | 'auto'
   theme?: 'dark' | 'light' | 'auto';
+  // 缩放配置
+  zoomConfig?: {
+    min?: number;           // 最小缩放比例，默认 0.5
+    max?: number;           // 最大缩放比例，默认 3
+    step?: number;          // 按钮缩放步长，默认 0.2
+    wheelBaseStep?: number; // 滚轮基础步长，默认 0.15
+    wheelMaxStep?: number;  // 滚轮最大步长，默认 0.3
+    wheelSpeedMultiplier?: number; // 滚轮速度乘数，默认 0.01
+  };
 }
 
 export class ViewerPro {
@@ -97,6 +111,8 @@ export class ViewerPro {
   private sideZoomInBtn!: HTMLButtonElement;
   private sideZoomOutBtn!: HTMLButtonElement;
   private sideResetZoomBtn!: HTMLButtonElement;
+  private sideRotateLeftBtn!: HTMLButtonElement;
+  private sideRotateRightBtn!: HTMLButtonElement;
   private sideFullscreenBtn!: HTMLButtonElement;
   private sideDownloadBtn!: HTMLButtonElement;
   private sideInfoBtn!: HTMLButtonElement;
@@ -124,6 +140,7 @@ export class ViewerPro {
         scale: number;
         translateX: number;
         translateY: number;
+        rotation: number;
         index: number;
         image: ViewerItem | null;
       }) => void)
@@ -138,15 +155,17 @@ export class ViewerPro {
 
   private images: ViewerItem[] = [];
   private currentIndex = 0;
+  private lastActiveIndex = -1; // Track last active thumbnail for optimization
   private scale = 1;
   private translateX = 0;
   private translateY = 0;
+  private rotation = 0; // 旋转角度（0, 90, 180, 270）
   private isDragging = false;
   private startX = 0;
   private startY = 0;
   private isFullscreen = false;
   private theme: 'dark' | 'light' | 'auto' = 'dark';
-  private imageLoadToken: number = 0; // 新增
+  private imageLoadToken: number = 0;
   private currentImageLoadStatus: { loaded: boolean; error?: string } = { loaded: false };
   private imageLoadCallbacks: Array<() => void> = [];
   private imageErrorCallbacks: Array<(error: string) => void> = [];
@@ -156,6 +175,17 @@ export class ViewerPro {
   // Performance optimization
   private dragRAF: number | null = null;
   private cachedContentDimensions: { width: number; height: number } | null = null;
+  private cachedCustomNode: HTMLElement | null = null;
+  // Wheel zoom optimization
+  private _wheelRAF: number | null = null;
+  private _lastWheelTime: number = 0;
+  // Zoom configuration
+  private zoomMin: number = ZOOM_MIN;
+  private zoomMax: number = ZOOM_MAX;
+  private zoomStep: number = ZOOM_STEP;
+  private zoomWheelBaseStep: number = ZOOM_WHEEL_BASE_STEP;
+  private zoomWheelMaxStep: number = ZOOM_WHEEL_MAX_STEP;
+  private zoomWheelSpeedMultiplier: number = ZOOM_WHEEL_SPEED_MULTIPLIER;
 
   private _boundDrag!: (e: MouseEvent | Touch) => void;
   private _boundStopDrag!: () => void;
@@ -182,6 +212,16 @@ export class ViewerPro {
         ? options.onTransformChange
         : null;
     this.theme = options.theme || 'dark';
+
+    // 初始化缩放配置
+    if (options.zoomConfig) {
+      this.zoomMin = options.zoomConfig.min ?? ZOOM_MIN;
+      this.zoomMax = options.zoomConfig.max ?? ZOOM_MAX;
+      this.zoomStep = options.zoomConfig.step ?? ZOOM_STEP;
+      this.zoomWheelBaseStep = options.zoomConfig.wheelBaseStep ?? ZOOM_WHEEL_BASE_STEP;
+      this.zoomWheelMaxStep = options.zoomConfig.wheelMaxStep ?? ZOOM_WHEEL_MAX_STEP;
+      this.zoomWheelSpeedMultiplier = options.zoomConfig.wheelSpeedMultiplier ?? ZOOM_WHEEL_SPEED_MULTIPLIER;
+    }
 
     this.initializeContainer();
     this.initializeElements();
@@ -213,6 +253,9 @@ export class ViewerPro {
           <button class="control-button" id="sideZoomOut" title="缩小">${zoomOutIcon}</button>
           <button class="control-button" id="sideResetZoom" title="重置缩放">${resetZoomIcon}</button>
           <button class="control-button" id="sideZoomIn" title="放大">${zoomInIcon}</button>
+          <div class="side-toolbar-sep"></div>
+          <button class="control-button" id="sideRotateLeft" title="向左旋转">${rotateLeftIcon}</button>
+          <button class="control-button" id="sideRotateRight" title="向右旋转">${rotateRightIcon}</button>
           <div class="side-toolbar-sep"></div>
           <button class="control-button" id="sideFullscreen" title="全屏">${fullscreenIcon}</button>
           <button class="control-button" id="sideDownload" title="下载">${downloadIcon}</button>
@@ -294,6 +337,12 @@ export class ViewerPro {
     this.sideResetZoomBtn = this.previewContainer.querySelector(
       "#sideResetZoom"
     ) as HTMLButtonElement;
+    this.sideRotateLeftBtn = this.previewContainer.querySelector(
+      "#sideRotateLeft"
+    ) as HTMLButtonElement;
+    this.sideRotateRightBtn = this.previewContainer.querySelector(
+      "#sideRotateRight"
+    ) as HTMLButtonElement;
     this.sideFullscreenBtn = this.previewContainer.querySelector(
       "#sideFullscreen"
     ) as HTMLButtonElement;
@@ -345,10 +394,19 @@ export class ViewerPro {
     };
     this._boundTouchEnd = this.stopDrag.bind(this);
     this._boundKeyDown = this.handleKeyDown.bind(this);
-    this._boundWheel = this.throttle((e: WheelEvent) => {
+    this._boundWheel = (e: WheelEvent) => {
       e.preventDefault();
-      this.zoom(e.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP);
-    }, 16);
+      
+      // 使用 RAF 替代节流，确保流畅性
+      if (this._wheelRAF !== null) {
+        return; // 如果已有待处理的缩放，跳过
+      }
+      
+      this._wheelRAF = requestAnimationFrame(() => {
+        this._wheelRAF = null;
+        this.handleWheelZoom(e);
+      });
+    };
     this._boundContainerClick = (e: MouseEvent) => {
       if (e.target === this.previewContainer) {
         this.close();
@@ -374,9 +432,9 @@ export class ViewerPro {
     this.prevButton.addEventListener("click", () => this.navigate(-1));
     this.nextButton.addEventListener("click", () => this.navigate(1));
     if (this.zoomInButton)
-      this.zoomInButton.addEventListener("click", () => this.zoom(ZOOM_STEP));
+      this.zoomInButton.addEventListener("click", () => this.zoom(this.zoomStep));
     if (this.zoomOutButton)
-      this.zoomOutButton.addEventListener("click", () => this.zoom(-ZOOM_STEP));
+      this.zoomOutButton.addEventListener("click", () => this.zoom(-this.zoomStep));
     if (this.resetZoomButton)
       this.resetZoomButton.addEventListener("click", () => this.resetZoom());
     if (this.fullscreenButton)
@@ -396,9 +454,11 @@ export class ViewerPro {
         this.toggleThumbnails()
       );
     // 侧边栏事件
-    this.sideZoomInBtn.addEventListener("click", () => this.zoom(ZOOM_STEP));
-    this.sideZoomOutBtn.addEventListener("click", () => this.zoom(-ZOOM_STEP));
+    this.sideZoomInBtn.addEventListener("click", () => this.zoom(this.zoomStep));
+    this.sideZoomOutBtn.addEventListener("click", () => this.zoom(-this.zoomStep));
     this.sideResetZoomBtn.addEventListener("click", () => this.resetZoom());
+    this.sideRotateLeftBtn.addEventListener("click", () => this.rotate(-90));
+    this.sideRotateRightBtn.addEventListener("click", () => this.rotate(90));
     this.sideFullscreenBtn.addEventListener("click", () =>
       this.toggleFullscreen()
     );
@@ -475,15 +535,17 @@ export class ViewerPro {
         thumbnail.addEventListener("click", () => this.open(index));
         this.thumbnailNav.appendChild(thumbnail);
       });
-    } else {
-      // 只更新 active 状态
-      Array.from(this.thumbnailNav.children).forEach((node, idx) => {
-        if (idx === this.currentIndex) {
-          node.classList.add("active");
-        } else {
-          node.classList.remove("active");
-        }
-      });
+      this.lastActiveIndex = this.currentIndex;
+    } else if (this.lastActiveIndex !== this.currentIndex) {
+      // 只更新变化的缩略图，避免遍历所有元素
+      const children = this.thumbnailNav.children;
+      if (this.lastActiveIndex >= 0 && this.lastActiveIndex < children.length) {
+        children[this.lastActiveIndex].classList.remove("active");
+      }
+      if (this.currentIndex >= 0 && this.currentIndex < children.length) {
+        children[this.currentIndex].classList.add("active");
+      }
+      this.lastActiveIndex = this.currentIndex;
     }
   }
 
@@ -493,6 +555,7 @@ export class ViewerPro {
     this.scale = 1;
     this.translateX = 0;
     this.translateY = 0;
+    this.rotation = 0;
     this.updateThumbnails(); // 先切换缩略图高亮
     this.updatePreview();
     this.previewContainer.classList.add("active");
@@ -608,8 +671,11 @@ export class ViewerPro {
 
     // 如果提供了自定义渲染节点，优先使用并跳过图片加载
     if (this.customRenderNode) {
-      const oldNode = this.imageContainer.querySelector(".custom-render-node");
-      if (oldNode) oldNode.remove();
+      // Clear cached custom node reference
+      if (this.cachedCustomNode) {
+        this.cachedCustomNode.remove();
+        this.cachedCustomNode = null;
+      }
 
       const node = this.createCustomNode(currentImage, this.currentIndex);
       if (node) {
@@ -620,6 +686,8 @@ export class ViewerPro {
           (node as HTMLElement).style.height = "100%";
         } catch {}
         this.imageContainer.appendChild(node);
+        // Cache the custom node reference for performance
+        this.cachedCustomNode = node;
         // Clear previewImage src if it was using a blob
         if (this.previewImage.src) {
           this.previewImage.src = "";
@@ -1004,36 +1072,123 @@ export class ViewerPro {
   }
 
   private zoom(delta: number) {
-    const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.scale + delta));
+    const newScale = Math.max(this.zoomMin, Math.min(this.zoomMax, this.scale + delta));
     if (newScale !== this.scale) {
       this.scale = newScale;
+      
+      // 缩放后调整位置，防止图片超出边界
+      if (this.scale <= 1) {
+        // 缩放到1或更小时，重置到中心
+        this.translateX = 0;
+        this.translateY = 0;
+      } else {
+        // 缩放大于1时，约束位置在合理范围内
+        this.constrainTranslation();
+      }
+      
       this.updateImageTransform();
     }
+  }
+
+  // 约束平移位置在合理范围内
+  private constrainTranslation() {
+    const containerRect = this.imageContainer.getBoundingClientRect();
+    const contentDimensions = this.calculateContentDimensions(containerRect);
+    const { width: contentWidth, height: contentHeight } = contentDimensions;
+    
+    // Calculate scaled dimensions
+    const scaledWidth = contentWidth * this.scale;
+    const scaledHeight = contentHeight * this.scale;
+    
+    // Calculate max translation to keep image edges within viewport
+    const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
+    const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
+    
+    // Constrain translation
+    this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
+    this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
+  }
+
+  private normalizeDelta(e: WheelEvent): number {
+    let delta = e.deltaY;
+    
+    // 标准化不同的 deltaMode
+    if (e.deltaMode === 1) {
+      // DOM_DELTA_LINE
+      delta *= 16; // 假设每行 16px
+    } else if (e.deltaMode === 2) {
+      // DOM_DELTA_PAGE
+      delta *= 800; // 假设每页 800px
+    }
+    
+    // 限制极端值
+    return Math.max(-100, Math.min(100, delta));
+  }
+
+  private calculateDynamicZoomStep(normalizedDelta: number): number {
+    const absDelta = Math.abs(normalizedDelta);
+    
+    // 基础步长 + 速度加成
+    const speedBonus = Math.min(
+      absDelta * this.zoomWheelSpeedMultiplier,
+      this.zoomWheelMaxStep - this.zoomWheelBaseStep
+    );
+    
+    return this.zoomWheelBaseStep + speedBonus;
+  }
+
+  private handleWheelZoom(e: WheelEvent): void {
+    // 标准化 deltaY（不同浏览器和设备差异很大）
+    const normalizedDelta = this.normalizeDelta(e);
+    
+    // 计算动态步长
+    const zoomStep = this.calculateDynamicZoomStep(normalizedDelta);
+    
+    // 应用缩放
+    const direction = normalizedDelta < 0 ? 1 : -1;
+    this.zoom(direction * zoomStep);
   }
 
   private resetZoom() {
     this.scale = 1;
     this.translateX = 0;
     this.translateY = 0;
+    this.rotation = 0;
     this.updateImageTransform();
   }
 
-  private updateImageTransform(skipTransition: boolean = false) {
-    const transformValue = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+  private rotate(degrees: number) {
+    // 累积旋转角度，不做取模，让 CSS 自然过渡
+    this.rotation += degrees;
+    this.updateImageTransform();
+  }
+
+  private updateImageTransform(skipTransition: boolean = false, useSpringTransition: boolean = false) {
+    const transformValue = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
     
+    // 确定过渡效果
+    let transition = "transform 0.3s ease";
+    if (skipTransition) {
+      transition = "none";
+    } else if (useSpringTransition) {
+      transition = "transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)";
+    }
+    
+    // 更新预览图片
     if (this.previewImage) {
-      // Disable transition during drag for smooth performance
-      if (skipTransition) {
-        this.previewImage.style.transition = "none";
-      } else {
-        this.previewImage.style.transition = "transform 0.3s ease";
-      }
+      this.previewImage.style.transition = transition;
       this.previewImage.style.transform = transformValue;
     }
+    
+    // 更新自定义渲染节点（如果存在）
+    if (this.cachedCustomNode) {
+      this.cachedCustomNode.style.transition = transition;
+      this.cachedCustomNode.style.transform = transformValue;
+    }
 
-    // 根据缩放状态更新容器光标
+    // 根据缩放状态更新容器光标（允许任何缩放级别拖动）
     if (this.imageContainer) {
-      this.imageContainer.style.cursor = this.scale > 1 ? "grab" : "default";
+      this.imageContainer.style.cursor = "grab";
     }
 
     // 同步到外部（无论是否使用 renderNode）
@@ -1042,26 +1197,44 @@ export class ViewerPro {
 
   // 将变换状态通过 dataset/CSS 变量/自定义事件/回调抛出
   private syncTransformState() {
+    // Only sync if there are listeners (callback or event listeners)
+    if (!this.onTransformChangeCb && !this.previewContainer.hasAttribute('data-has-transform-listener')) {
+      return;
+    }
+    
     const state = {
       scale: this.scale,
       translateX: this.translateX,
       translateY: this.translateY,
+      rotation: this.rotation,
       index: this.currentIndex,
       image: this.images[this.currentIndex] || null,
     };
-    // data-* 属性，方便外部读取
-    this.previewContainer.dataset.scale = String(this.scale);
-    this.previewContainer.dataset.tx = String(this.translateX);
-    this.previewContainer.dataset.ty = String(this.translateY);
-    this.previewContainer.dataset.index = String(this.currentIndex);
-    // CSS 变量，供外部样式或自定义节点使用
-    const host = this.imageContainer as HTMLElement;
-    host.style.setProperty("--vp-scale", String(this.scale));
-    host.style.setProperty("--vp-tx", `${this.translateX}px`);
-    host.style.setProperty("--vp-ty", `${this.translateY}px`);
-    // 自定义事件
-    const evt = new CustomEvent("viewerpro:transform", { detail: state });
-    this.previewContainer.dispatchEvent(evt);
+    
+    // Only update dataset if needed (for external reading)
+    if (this.previewContainer.dataset.scale !== String(this.scale)) {
+      this.previewContainer.dataset.scale = String(this.scale);
+      this.previewContainer.dataset.tx = String(this.translateX);
+      this.previewContainer.dataset.ty = String(this.translateY);
+      this.previewContainer.dataset.rotation = String(this.rotation);
+      this.previewContainer.dataset.index = String(this.currentIndex);
+    }
+    
+    // CSS 变量，供外部样式或自定义节点使用（仅在有自定义节点时）
+    if (this.cachedCustomNode) {
+      const host = this.imageContainer as HTMLElement;
+      host.style.setProperty("--vp-scale", String(this.scale));
+      host.style.setProperty("--vp-tx", `${this.translateX}px`);
+      host.style.setProperty("--vp-ty", `${this.translateY}px`);
+      host.style.setProperty("--vp-rotation", `${this.rotation}deg`);
+    }
+    
+    // 自定义事件（仅在有监听器时触发）
+    if (this.previewContainer.hasAttribute('data-has-transform-listener')) {
+      const evt = new CustomEvent("viewerpro:transform", { detail: state });
+      this.previewContainer.dispatchEvent(evt);
+    }
+    
     // 回调
     if (this.onTransformChangeCb) this.onTransformChangeCb(state);
   }
@@ -1072,6 +1245,7 @@ export class ViewerPro {
       scale: this.scale,
       translateX: this.translateX,
       translateY: this.translateY,
+      rotation: this.rotation,
       index: this.currentIndex,
       image: this.images[this.currentIndex] || null,
     };
@@ -1083,6 +1257,7 @@ export class ViewerPro {
       scale: number;
       translateX: number;
       translateY: number;
+      rotation: number;
       index: number;
       image: ViewerItem | null;
     }) => void
@@ -1100,7 +1275,7 @@ export class ViewerPro {
   }
 
   private startDrag(e: MouseEvent | Touch) {
-    if (this.scale <= 1) return;
+    // 允许任何缩放级别下拖动（小于1时松手会回弹）
     if ("preventDefault" in e && typeof e.preventDefault === "function") {
       e.preventDefault();
     }
@@ -1149,29 +1324,31 @@ export class ViewerPro {
       this.translateX = e.clientX - this.startX;
       this.translateY = e.clientY - this.startY;
 
-      // Calculate scaled dimensions
-      const scaledWidth = contentWidth * this.scale;
-      const scaledHeight = contentHeight * this.scale;
-      
-      // Calculate max translation to keep image edges within viewport
-      const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
-      const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
-      
-      // Constrain translation
-      this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
-      this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
+      // 只在缩放大于1时约束拖动范围，小于等于1时允许自由拖动
+      if (this.scale > 1) {
+        // Calculate scaled dimensions
+        const scaledWidth = contentWidth * this.scale;
+        const scaledHeight = contentHeight * this.scale;
+        
+        // Calculate max translation to keep image edges within viewport
+        const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
+        const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
+        
+        // Constrain translation
+        this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
+        this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
+      }
 
       this.updateImageTransform(true); // Pass true to skip transition during drag
     });
   }
 
   private calculateContentDimensions(containerRect: DOMRect): { width: number; height: number } {
-    const customEl = this.imageContainer.querySelector(".custom-render-node") as HTMLElement | null;
-    
-    if (customEl) {
+    // Use cached custom node reference to avoid DOM query
+    if (this.cachedCustomNode) {
       return {
-        width: customEl.offsetWidth,
-        height: customEl.offsetHeight
+        width: this.cachedCustomNode.offsetWidth,
+        height: this.cachedCustomNode.offsetHeight
       };
     } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
       const imgAspect = this.previewImage.naturalWidth / this.previewImage.naturalHeight;
@@ -1195,11 +1372,8 @@ export class ViewerPro {
   private stopDrag() {
     if (!this.isDragging) return;
     this.isDragging = false;
-    this.imageContainer.style.cursor = this.scale > 1 ? "grab" : "default";
+    this.imageContainer.style.cursor = "grab"; // 允许任何缩放级别拖动
     document.body.style.userSelect = "";
-    
-    // Clear cached dimensions
-    this.cachedContentDimensions = null;
     
     // Cancel any pending RAF
     if (this.dragRAF !== null) {
@@ -1207,10 +1381,19 @@ export class ViewerPro {
       this.dragRAF = null;
     }
     
-    // Re-enable transition after drag ends
-    if (this.previewImage) {
-      this.previewImage.style.transition = "transform 0.3s ease";
+    // 如果缩放小于等于1，回弹到中心位置（使用弹性动画）
+    if (this.scale <= 1) {
+      this.translateX = 0;
+      this.translateY = 0;
+      this.updateImageTransform(false, true); // 使用弹性过渡
+    } else {
+      // 缩放大于1时，确保位置在合理范围内（修复缩放后位置不正确的问题）
+      this.constrainTranslation();
+      this.updateImageTransform(false, false); // 使用普通过渡
     }
+    
+    // Clear cached dimensions
+    this.cachedContentDimensions = null;
     
     document.removeEventListener("mousemove", this._boundDrag);
     document.removeEventListener("mouseup", this._boundStopDrag);
@@ -1274,10 +1457,10 @@ export class ViewerPro {
         break;
       case "+":
       case "=":
-        this.zoom(ZOOM_STEP);
+        this.zoom(this.zoomStep);
         break;
       case "-":
-        this.zoom(-ZOOM_STEP);
+        this.zoom(-this.zoomStep);
         break;
       case "0":
         this.resetZoom();
@@ -1388,8 +1571,16 @@ export class ViewerPro {
       this.dragRAF = null;
     }
     
-    // Clear cached dimensions
+    // 清理滚轮 RAF
+    if (this._wheelRAF !== null) {
+      cancelAnimationFrame(this._wheelRAF);
+      this._wheelRAF = null;
+    }
+    
+    // Clear all caches
     this.cachedContentDimensions = null;
+    this.cachedCustomNode = null;
+    this.lastActiveIndex = -1;
 
     // 从DOM中移除容器
     if (this.previewContainer && this.previewContainer.parentNode) {
@@ -1424,6 +1615,35 @@ export class ViewerPro {
   // 获取当前主题
   public getTheme(): 'dark' | 'light' | 'auto' {
     return this.theme;
+  }
+
+  // 设置缩放配置
+  public setZoomConfig(config: {
+    min?: number;
+    max?: number;
+    step?: number;
+    wheelBaseStep?: number;
+    wheelMaxStep?: number;
+    wheelSpeedMultiplier?: number;
+  }) {
+    if (config.min !== undefined) this.zoomMin = config.min;
+    if (config.max !== undefined) this.zoomMax = config.max;
+    if (config.step !== undefined) this.zoomStep = config.step;
+    if (config.wheelBaseStep !== undefined) this.zoomWheelBaseStep = config.wheelBaseStep;
+    if (config.wheelMaxStep !== undefined) this.zoomWheelMaxStep = config.wheelMaxStep;
+    if (config.wheelSpeedMultiplier !== undefined) this.zoomWheelSpeedMultiplier = config.wheelSpeedMultiplier;
+  }
+
+  // 获取缩放配置
+  public getZoomConfig() {
+    return {
+      min: this.zoomMin,
+      max: this.zoomMax,
+      step: this.zoomStep,
+      wheelBaseStep: this.zoomWheelBaseStep,
+      wheelMaxStep: this.zoomWheelMaxStep,
+      wheelSpeedMultiplier: this.zoomWheelSpeedMultiplier,
+    };
   }
 }
 

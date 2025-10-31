@@ -300,15 +300,15 @@ const init = async () => {
       });
       // 注意：loading 的关闭已经由 customLoading 中的逻辑处理
     },
-    onTransformChange: ({ scale, translateX, translateY, index }) => {
-      // 让自定义 render 的根节点跟随缩放/位移
+    onTransformChange: ({ scale, translateX, translateY, rotation, index }) => {
+      // 让自定义 render 的根节点跟随缩放/位移/旋转
       const el = document.getElementById(
         `custom-render-${index}`
       ) as HTMLElement | null;
       if (!el) return;
       // 使用 rAF 保持流畅
       requestAnimationFrame(() => {
-        el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${rotation}deg)`;
       });
       // 同步右侧信息面板中的缩放显示
       const scaleEl = document.getElementById(`info-scale-${index}`);
