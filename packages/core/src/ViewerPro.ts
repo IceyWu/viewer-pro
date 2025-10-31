@@ -1115,37 +1115,53 @@ export class ViewerPro {
     // Use requestAnimationFrame for smooth dragging
     requestAnimationFrame(() => {
       const containerRect = this.imageContainer.getBoundingClientRect();
-      const imageRect = this.previewImage.getBoundingClientRect();
+      
+      // Calculate actual content dimensions based on natural size
+      let contentWidth: number;
+      let contentHeight: number;
+      
       const customEl = this.imageContainer.querySelector(
         ".custom-render-node"
       ) as HTMLElement | null;
-      const contentRect = customEl
-        ? customEl.getBoundingClientRect()
-        : imageRect;
+      
+      if (customEl) {
+        // For custom render nodes, use their natural size
+        contentWidth = customEl.offsetWidth;
+        contentHeight = customEl.offsetHeight;
+      } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
+        // For images, calculate the displayed size at scale = 1
+        const imgAspect = this.previewImage.naturalWidth / this.previewImage.naturalHeight;
+        const containerAspect = containerRect.width / containerRect.height;
+        
+        if (imgAspect > containerAspect) {
+          // Image is wider - constrained by width
+          contentWidth = Math.min(this.previewImage.naturalWidth, containerRect.width);
+          contentHeight = contentWidth / imgAspect;
+        } else {
+          // Image is taller - constrained by height
+          contentHeight = Math.min(this.previewImage.naturalHeight, containerRect.height);
+          contentWidth = contentHeight * imgAspect;
+        }
+      } else {
+        // Fallback to container dimensions when image not loaded
+        contentWidth = containerRect.width;
+        contentHeight = containerRect.height;
+      }
+      
       this.translateX = e.clientX - this.startX;
       this.translateY = e.clientY - this.startY;
 
-      // Constrain dragging within bounds（自定义渲染时使用自定义节点尺寸；若不可得则不约束）
-      const baseW = contentRect.width || 0;
-      const baseH = contentRect.height || 0;
-      if (baseW > 0 && baseH > 0) {
-        const maxTranslateX = Math.max(
-          0,
-          (baseW * this.scale - containerRect.width) / 2
-        );
-        const maxTranslateY = Math.max(
-          0,
-          (baseH * this.scale - containerRect.height) / 2
-        );
-        this.translateX = Math.max(
-          -maxTranslateX,
-          Math.min(maxTranslateX, this.translateX)
-        );
-        this.translateY = Math.max(
-          -maxTranslateY,
-          Math.min(maxTranslateY, this.translateY)
-        );
-      }
+      // Calculate scaled dimensions
+      const scaledWidth = contentWidth * this.scale;
+      const scaledHeight = contentHeight * this.scale;
+      
+      // Calculate max translation to keep image edges within viewport
+      const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
+      const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
+      
+      // Constrain translation
+      this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
+      this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
 
       this.updateImageTransform();
     });

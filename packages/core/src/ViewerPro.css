@@ -305,7 +305,8 @@
   align-items: center;
   overflow: hidden;
   min-height: 0;
-  max-height: calc(100vh - 220px); /* 220px = 工具栏+缩略图条+间隔 */
+  /* Removed max-height to allow images to scale beyond viewport during zoom */
+  position: relative;
 }
 .image-preview-image {
   max-width: 100%;
@@ -314,7 +315,7 @@
   transition: transform 0.3s ease;
   cursor: grab;
   will-change: transform;
-  transform-origin: center;
+  transform-origin: center center; /* Explicit center origin for predictable zoom behavior */
 }
 .image-preview-image:active {
   cursor: grabbing;
