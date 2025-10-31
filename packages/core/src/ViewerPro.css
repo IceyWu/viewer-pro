@@ -334,7 +334,7 @@
   display: flex;
   flex-direction: row;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-start;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 12px 24px 16px 24px;
@@ -350,7 +350,55 @@
   z-index: 30;
   box-sizing: border-box;
   scrollbar-width: none;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  scroll-behavior: smooth;
 }
+
+/* 左侧渐变遮罩 */
+.thumbnail-nav::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.6) 0%,
+    rgba(0, 0, 0, 0.3) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 20px 0 0 0;
+}
+
+/* 右侧渐变遮罩 */
+.thumbnail-nav::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  background: linear-gradient(
+    to left,
+    rgba(0, 0, 0, 0.6) 0%,
+    rgba(0, 0, 0, 0.3) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 0 20px 0 0;
+}
+
+/* 隐藏缩略图 */
+.thumbnail-nav.hidden {
+  transform: translateX(-50%) translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .thumbnail-nav::-webkit-scrollbar {
   display: none; /* 隐藏滚动条 */
 }

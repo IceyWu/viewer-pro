@@ -248,15 +248,14 @@ export class ViewerPro {
       <div class="image-preview-content">
         <!-- 左侧竖向操作栏 -->
         <div class="side-toolbar" id="sideToolbar">
-          <button class="control-button" id="sideToggleThumbnails" title="缩略图">${gridIcon}</button>
-          <div class="side-toolbar-sep"></div>
-          <button class="control-button" id="sideZoomOut" title="缩小">${zoomOutIcon}</button>
-          <button class="control-button" id="sideResetZoom" title="重置缩放">${resetZoomIcon}</button>
           <button class="control-button" id="sideZoomIn" title="放大">${zoomInIcon}</button>
+          <button class="control-button" id="sideZoomOut" title="缩小">${zoomOutIcon}</button>
+          <button class="control-button" id="sideResetZoom" title="1:1">${resetZoomIcon}</button>
           <div class="side-toolbar-sep"></div>
           <button class="control-button" id="sideRotateLeft" title="向左旋转">${rotateLeftIcon}</button>
           <button class="control-button" id="sideRotateRight" title="向右旋转">${rotateRightIcon}</button>
           <div class="side-toolbar-sep"></div>
+          <button class="control-button" id="sideToggleThumbnails" title="缩略图">${gridIcon}</button>
           <button class="control-button" id="sideFullscreen" title="全屏">${fullscreenIcon}</button>
           <button class="control-button" id="sideDownload" title="下载">${downloadIcon}</button>
           <button class="control-button" id="sideInfoOpen" title="信息">${infoIcon}</button>
@@ -547,6 +546,28 @@ export class ViewerPro {
       }
       this.lastActiveIndex = this.currentIndex;
     }
+    
+    // 自动滚动到当前激活的缩略图
+    this.scrollToActiveThumbnail();
+  }
+
+  // 滚动到当前激活的缩略图
+  private scrollToActiveThumbnail() {
+    if (this.currentIndex < 0 || this.currentIndex >= this.thumbnailNav.children.length) {
+      return;
+    }
+    
+    const activeThumbnail = this.thumbnailNav.children[this.currentIndex] as HTMLElement;
+    if (!activeThumbnail) return;
+    
+    // 使用 scrollIntoView 滚动到可见区域
+    requestAnimationFrame(() => {
+      activeThumbnail.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    });
   }
 
   public open(index: number) {
@@ -1527,10 +1548,22 @@ export class ViewerPro {
     this.progressMask.style.display = "none";
   }
 
-  // 缩略图抽屉开关（主要用于移动端）
+  // 缩略图显示/隐藏切换
   private toggleThumbnails() {
     if (!this.thumbnailNav) return;
-    this.thumbnailNav.classList.toggle("open");
+    
+    // 切换 hidden class 来控制显示/隐藏
+    const isHidden = this.thumbnailNav.classList.contains("hidden");
+    
+    if (isHidden) {
+      // 显示缩略图
+      this.thumbnailNav.classList.remove("hidden");
+      this.thumbnailNav.classList.add("open");
+    } else {
+      // 隐藏缩略图
+      this.thumbnailNav.classList.add("hidden");
+      this.thumbnailNav.classList.remove("open");
+    }
   }
 
   // 新增：清理资源的方法
