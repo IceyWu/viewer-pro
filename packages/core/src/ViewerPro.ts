@@ -153,6 +153,9 @@ export class ViewerPro {
   // Resource management
   private activeBlobUrl: string | null = null;
   private activeXHR: XMLHttpRequest | null = null;
+  // Performance optimization
+  private dragRAF: number | null = null;
+  private cachedContentDimensions: { width: number; height: number } | null = null;
 
   private _boundDrag!: (e: MouseEvent | Touch) => void;
   private _boundStopDrag!: () => void;
@@ -1015,9 +1018,17 @@ export class ViewerPro {
     this.updateImageTransform();
   }
 
-  private updateImageTransform() {
+  private updateImageTransform(skipTransition: boolean = false) {
+    const transformValue = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    
     if (this.previewImage) {
-      this.previewImage.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+      // Disable transition during drag for smooth performance
+      if (skipTransition) {
+        this.previewImage.style.transition = "none";
+      } else {
+        this.previewImage.style.transition = "transform 0.3s ease";
+      }
+      this.previewImage.style.transform = transformValue;
     }
 
     // 根据缩放状态更新容器光标
@@ -1098,6 +1109,11 @@ export class ViewerPro {
     this.startY = e.clientY - this.translateY;
     this.imageContainer.style.cursor = "grabbing";
     document.body.style.userSelect = "none";
+    
+    // Cache content dimensions at drag start for better performance
+    const containerRect = this.imageContainer.getBoundingClientRect();
+    this.cachedContentDimensions = this.calculateContentDimensions(containerRect);
+    
     document.addEventListener("mousemove", this._boundDrag);
     document.addEventListener("mouseup", this._boundStopDrag);
     document.addEventListener("touchmove", this._boundTouchDrag, {
@@ -1112,41 +1128,23 @@ export class ViewerPro {
       e.preventDefault();
     }
 
+    // Cancel previous RAF to avoid stacking
+    if (this.dragRAF !== null) {
+      cancelAnimationFrame(this.dragRAF);
+    }
+
     // Use requestAnimationFrame for smooth dragging
-    requestAnimationFrame(() => {
+    this.dragRAF = requestAnimationFrame(() => {
+      this.dragRAF = null;
+      
       const containerRect = this.imageContainer.getBoundingClientRect();
       
-      // Calculate actual content dimensions based on natural size
-      let contentWidth: number;
-      let contentHeight: number;
-      
-      const customEl = this.imageContainer.querySelector(
-        ".custom-render-node"
-      ) as HTMLElement | null;
-      
-      if (customEl) {
-        // For custom render nodes, use their natural size
-        contentWidth = customEl.offsetWidth;
-        contentHeight = customEl.offsetHeight;
-      } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
-        // For images, calculate the displayed size at scale = 1
-        const imgAspect = this.previewImage.naturalWidth / this.previewImage.naturalHeight;
-        const containerAspect = containerRect.width / containerRect.height;
-        
-        if (imgAspect > containerAspect) {
-          // Image is wider - constrained by width
-          contentWidth = Math.min(this.previewImage.naturalWidth, containerRect.width);
-          contentHeight = contentWidth / imgAspect;
-        } else {
-          // Image is taller - constrained by height
-          contentHeight = Math.min(this.previewImage.naturalHeight, containerRect.height);
-          contentWidth = contentHeight * imgAspect;
-        }
-      } else {
-        // Fallback to container dimensions when image not loaded
-        contentWidth = containerRect.width;
-        contentHeight = containerRect.height;
+      // Use cached dimensions if available, otherwise calculate
+      if (!this.cachedContentDimensions) {
+        this.cachedContentDimensions = this.calculateContentDimensions(containerRect);
       }
+      
+      const { width: contentWidth, height: contentHeight } = this.cachedContentDimensions;
       
       this.translateX = e.clientX - this.startX;
       this.translateY = e.clientY - this.startY;
@@ -1163,8 +1161,35 @@ export class ViewerPro {
       this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
       this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
 
-      this.updateImageTransform();
+      this.updateImageTransform(true); // Pass true to skip transition during drag
     });
+  }
+
+  private calculateContentDimensions(containerRect: DOMRect): { width: number; height: number } {
+    const customEl = this.imageContainer.querySelector(".custom-render-node") as HTMLElement | null;
+    
+    if (customEl) {
+      return {
+        width: customEl.offsetWidth,
+        height: customEl.offsetHeight
+      };
+    } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
+      const imgAspect = this.previewImage.naturalWidth / this.previewImage.naturalHeight;
+      const containerAspect = containerRect.width / containerRect.height;
+      
+      if (imgAspect > containerAspect) {
+        const width = Math.min(this.previewImage.naturalWidth, containerRect.width);
+        return { width, height: width / imgAspect };
+      } else {
+        const height = Math.min(this.previewImage.naturalHeight, containerRect.height);
+        return { width: height * imgAspect, height };
+      }
+    }
+    
+    return {
+      width: containerRect.width,
+      height: containerRect.height
+    };
   }
 
   private stopDrag() {
@@ -1172,6 +1197,21 @@ export class ViewerPro {
     this.isDragging = false;
     this.imageContainer.style.cursor = this.scale > 1 ? "grab" : "default";
     document.body.style.userSelect = "";
+    
+    // Clear cached dimensions
+    this.cachedContentDimensions = null;
+    
+    // Cancel any pending RAF
+    if (this.dragRAF !== null) {
+      cancelAnimationFrame(this.dragRAF);
+      this.dragRAF = null;
+    }
+    
+    // Re-enable transition after drag ends
+    if (this.previewImage) {
+      this.previewImage.style.transition = "transform 0.3s ease";
+    }
+    
     document.removeEventListener("mousemove", this._boundDrag);
     document.removeEventListener("mouseup", this._boundStopDrag);
     document.removeEventListener(
@@ -1341,6 +1381,15 @@ export class ViewerPro {
       }
       this.activeXHR = null;
     }
+    
+    // Cancel any pending RAF
+    if (this.dragRAF !== null) {
+      cancelAnimationFrame(this.dragRAF);
+      this.dragRAF = null;
+    }
+    
+    // Clear cached dimensions
+    this.cachedContentDimensions = null;
 
     // 从DOM中移除容器
     if (this.previewContainer && this.previewContainer.parentNode) {

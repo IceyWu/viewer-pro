@@ -225,7 +225,7 @@ const init = async () => {
       box.innerHTML = `
           <img src="${
             imgObj.src
-          }" style="max-width:90%;max-height:90%;border-radius:12px;box-shadow:0 2px 16px #0004;">
+          }" style="max-width:90%;max-height:90%;">
         `;
     }
 
