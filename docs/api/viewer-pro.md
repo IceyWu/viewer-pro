@@ -68,7 +68,7 @@ viewer.addImages([
 
 ### getState()
 
-获取当前的缩放和位移状态。
+获取当前的缩放、位移和旋转状态。
 
 ```typescript
 const state = viewer.getState()
@@ -76,6 +76,7 @@ const state = viewer.getState()
 //   scale: 1.5,
 //   translateX: 100,
 //   translateY: 50,
+//   rotation: 90,
 //   index: 0,
 //   image: { ... }
 // }
@@ -84,11 +85,12 @@ const state = viewer.getState()
 **返回值:**
 ```typescript
 {
-  scale: number
-  translateX: number
-  translateY: number
-  index: number
-  image: ViewerItem | null
+  scale: number          // 缩放比例
+  translateX: number     // X 轴位移
+  translateY: number     // Y 轴位移
+  rotation: number       // 旋转角度（度）
+  index: number          // 当前索引
+  image: ViewerItem | null  // 当前图片对象
 }
 ```
 
@@ -135,16 +137,97 @@ viewer.closeLoading()
 viewer.destroy()
 ```
 
+### setTheme(theme)
+
+设置主题模式。
+
+```typescript
+viewer.setTheme('dark')   // 深色主题
+viewer.setTheme('light')  // 浅色主题
+viewer.setTheme('auto')   // 自动主题
+```
+
+**参数:**
+- `theme: 'dark' | 'light' | 'auto'` - 主题模式
+
+**说明:**
+- `dark` - 深色主题，适合暗光环境
+- `light` - 浅色主题，适合明亮环境
+- `auto` - 自动根据系统设置切换
+
+### getTheme()
+
+获取当前的主题模式。
+
+```typescript
+const theme = viewer.getTheme()
+console.log('当前主题:', theme) // 'dark' | 'light' | 'auto'
+```
+
+**返回值:**
+- `'dark' | 'light' | 'auto'` - 当前主题模式
+
+### setZoomConfig(config)
+
+设置缩放配置。
+
+```typescript
+viewer.setZoomConfig({
+  min: 0.5,
+  max: 5,
+  step: 0.3
+})
+```
+
+**参数:**
+- `config: Partial<ZoomConfig>` - 缩放配置对象（可以只设置部分属性）
+
+**示例:**
+
+```typescript
+// 只修改最大缩放比例
+viewer.setZoomConfig({ max: 5 })
+
+// 修改滚轮缩放配置
+viewer.setZoomConfig({
+  wheelBaseStep: 0.2,
+  wheelMaxStep: 0.4
+})
+```
+
+### getZoomConfig()
+
+获取当前的缩放配置。
+
+```typescript
+const config = viewer.getZoomConfig()
+console.log('缩放配置:', config)
+// {
+//   min: 0.5,
+//   max: 3,
+//   step: 0.2,
+//   wheelBaseStep: 0.15,
+//   wheelMaxStep: 0.3,
+//   wheelSpeedMultiplier: 0.01
+// }
+```
+
+**返回值:**
+- `ZoomConfig` - 当前的缩放配置对象
+
 ## 键盘快捷键
 
 ViewerPro 支持以下键盘快捷键：
 
-- `Escape` - 关闭预览
+- `Escape` - 关闭预览（如果信息面板打开，则先关闭信息面板）
 - `←` / `→` - 切换上一张/下一张
-- `+` / `-` - 放大/缩小
-- `0` - 重置缩放
+- `+` / `=` - 放大
+- `-` - 缩小
+- `0` - 重置缩放（1:1）
 - `f` - 切换全屏
 - `d` - 下载当前图片
+
+**注意:** 键盘快捷键仅在预览器激活时有效。
 
 ## 下一步
 

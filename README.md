@@ -10,11 +10,13 @@
 
 ## ✨ 特性
 
-- 🖼️ **图片预览** - 支持图片缩放、拖拽、切换、全屏、下载
+- 🖼️ **图片预览** - 支持图片缩放、拖拽、旋转、切换、全屏、下载
 - 🎨 **现代化 UI** - 流畅的动画效果和现代感的 UI 设计
 - 📱 **响应式设计** - 完美适配桌面端和移动端
 - 🎯 **缩略图导航** - 快速定位和切换图片
-- ⚙️ **高度可定制** - 支持自定义 Loading 节点和图片渲染节点
+- ⚙️ **高度可定制** - 支持自定义 Loading、渲染节点、信息面板
+- 🎭 **主题系统** - 支持深色、浅色和自动主题切换
+- 📸 **Live Photo** - 通过集成 `live-photo` 库支持动态照片展示
 - ⌨️ **键盘快捷键** - 支持键盘快捷键操作
 
 ## 📦 安装
@@ -104,9 +106,14 @@ function openPreview(idx: number) {
 | 参数           | 说明                         | 类型                                        |
 | -------------- | ---------------------------- | ------------------------------------------- |
 | images         | 图片数组                      | `ViewerItem[]`                                |
-| loadingNode    | 自定义 loading 节点           | `HTMLElement` \| `() => HTMLElement`        |
-| renderNode     | 自定义图片渲染节点            | `HTMLElement` \| `(imgObj, idx) => HTMLElement` |
-| onImageLoad    | 图片加载完成回调              | `(imgObj, idx) => void`                     |
+| loadingNode    | 自定义 loading 节点           | `HTMLElement` \| `() => HTMLElement` \| `(item, idx) => HTMLElement \| LoadingNodeResult`        |
+| renderNode     | 自定义图片渲染节点            | `HTMLElement` \| `(item, idx) => HTMLElement` |
+| infoRender     | 自定义信息面板                | `HTMLElement` \| `(item, idx) => HTMLElement` |
+| theme          | 主题设置                      | `'dark'` \| `'light'` \| `'auto'`           |
+| zoomConfig     | 缩放配置                      | `ZoomConfig`                                |
+| onImageLoad    | 图片加载完成回调              | `(item, idx) => void`                       |
+| onContentReady | 内容就绪回调                  | `(item, idx) => void`                       |
+| onTransformChange | 变换状态改变回调           | `(state) => void`                           |
 
 ### ViewerItem
 
@@ -115,6 +122,9 @@ function openPreview(idx: number) {
 | src       | 图片地址     | string   |
 | thumbnail | 缩略图地址   | string   |
 | title     | 图片标题     | string   |
+| type      | 图片类型     | string   |
+| photoSrc  | Live Photo 图片地址 | string |
+| videoSrc  | Live Photo 视频地址 | string |
 
 ### 常用方法
 
@@ -122,6 +132,10 @@ function openPreview(idx: number) {
 - `close()`：关闭预览
 - `addImages(images: ViewerItem[])`：动态添加图片
 - `init()`：初始化事件绑定
+- `setTheme(theme)`：设置主题
+- `setZoomConfig(config)`：设置缩放配置
+- `getState()`：获取当前状态
+- `destroy()`：销毁实例
 
 ## 📚 文档
 

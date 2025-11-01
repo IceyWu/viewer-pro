@@ -27,9 +27,18 @@ export default defineConfig({
           ]
         },
         {
-          text: '使用',
+          text: '基础',
           items: [
-            { text: '示例', link: '/guide/examples' }
+            { text: '基础示例', link: '/guide/examples' }
+          ]
+        },
+        {
+          text: '高级功能',
+          items: [
+            { text: '自定义 Loading', link: '/guide/custom-loading' },
+            { text: '自定义渲染', link: '/guide/custom-render' },
+            { text: '自定义信息面板', link: '/guide/custom-info' },
+            { text: '主题和配置', link: '/guide/theme-and-config' }
           ]
         }
       ],

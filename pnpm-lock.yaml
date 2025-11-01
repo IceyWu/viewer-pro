@@ -17,6 +17,9 @@ importers:
 
   docs:
     dependencies:
+      live-photo:
+        specifier: ^0.0.48
+        version: 0.0.48
       viewer-pro:
         specifier: workspace:*
         version: link:../packages/core

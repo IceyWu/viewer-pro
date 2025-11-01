@@ -42,6 +42,8 @@ interface ViewerProOptions {
   onImageLoad?: (item: ViewerItem, idx: number) => void
   onContentReady?: (item: ViewerItem, idx: number) => void
   onTransformChange?: (state: TransformState) => void
+  theme?: 'dark' | 'light' | 'auto'
+  zoomConfig?: ZoomConfig
 }
 ```
 
@@ -128,6 +130,40 @@ const loadingWithControl = (imgObj, idx) => {
 - **类型:** `(state: TransformState) => void`
 - **可选:** 是
 
+#### theme
+
+主题设置。
+
+- **类型:** `'dark' | 'light' | 'auto'`
+- **可选:** 是
+- **默认值:** `'dark'`
+
+**说明:**
+- `dark` - 深色主题
+- `light` - 浅色主题
+- `auto` - 自动根据系统设置切换
+
+#### zoomConfig
+
+缩放配置选项。
+
+- **类型:** `ZoomConfig`
+- **可选:** 是
+
+**示例:**
+
+```typescript
+const viewer = new ViewerPro({
+  images,
+  theme: 'dark',
+  zoomConfig: {
+    min: 0.5,
+    max: 3,
+    step: 0.2
+  }
+})
+```
+
 ## LoadingContext
 
 加载上下文接口，用于高度自定义 loading 控制。
@@ -189,11 +225,54 @@ interface LoadingContext {
 interface TransformState {
   scale: number          // 缩放比例
   translateX: number     // X 轴位移
-  translateY: number      // Y 轴位移
-  index: number           // 当前预览项索引
+  translateY: number     // Y 轴位移
+  rotation: number       // 旋转角度（度）
+  index: number          // 当前预览项索引
   image: ViewerItem | null // 当前预览项对象
 }
 ```
+
+### 属性说明
+
+#### scale
+
+当前的缩放比例。
+
+- **类型:** `number`
+- **范围:** 由 `zoomConfig.min` 和 `zoomConfig.max` 决定，默认 0.5 - 3
+
+#### translateX
+
+X 轴的位移量（像素）。
+
+- **类型:** `number`
+
+#### translateY
+
+Y 轴的位移量（像素）。
+
+- **类型:** `number`
+
+#### rotation
+
+旋转角度（度）。
+
+- **类型:** `number`
+- **说明:** 累积旋转角度，可以是任意值（如 90, 180, 270, 360, 450 等）
+
+#### index
+
+当前预览项的索引。
+
+- **类型:** `number`
+- **范围:** 0 到 images.length - 1
+
+#### image
+
+当前预览项对象。
+
+- **类型:** `ViewerItem | null`
+- **说明:** 如果没有图片则为 null
 
 ## LoadingNodeResult
 
@@ -229,4 +308,112 @@ const customLoading = (imgObj, idx) => {
     }
   }
 }
+```
+
+## ZoomConfig
+
+缩放配置接口。
+
+```typescript
+interface ZoomConfig {
+  min?: number              // 最小缩放比例，默认 0.5
+  max?: number              // 最大缩放比例，默认 3
+  step?: number             // 按钮缩放步长，默认 0.2
+  wheelBaseStep?: number    // 滚轮基础步长，默认 0.15
+  wheelMaxStep?: number     // 滚轮最大步长，默认 0.3
+  wheelSpeedMultiplier?: number  // 滚轮速度乘数，默认 0.01
+}
+```
+
+### 属性说明
+
+#### min
+
+最小缩放比例。
+
+- **类型:** `number`
+- **默认值:** `0.5`
+- **说明:** 图片可以缩小到原始尺寸的百分比
+
+#### max
+
+最大缩放比例。
+
+- **类型:** `number`
+- **默认值:** `3`
+- **说明:** 图片可以放大到原始尺寸的倍数
+
+#### step
+
+按钮缩放步长。
+
+- **类型:** `number`
+- **默认值:** `0.2`
+- **说明:** 点击放大/缩小按钮时的缩放增量
+
+#### wheelBaseStep
+
+滚轮基础步长。
+
+- **类型:** `number`
+- **默认值:** `0.15`
+- **说明:** 慢速滚动时的缩放增量，提供精确控制
+
+#### wheelMaxStep
+
+滚轮最大步长。
+
+- **类型:** `number`
+- **默认值:** `0.3`
+- **说明:** 快速滚动时的最大缩放增量
+
+#### wheelSpeedMultiplier
+
+滚轮速度乘数。
+
+- **类型:** `number`
+- **默认值:** `0.01`
+- **说明:** 控制滚动速度对步长的影响程度
+
+### 动态步长计算
+
+ViewerPro 使用以下公式计算滚轮缩放步长：
+
+```
+步长 = wheelBaseStep + min(滚动速度 × wheelSpeedMultiplier, wheelMaxStep - wheelBaseStep)
+```
+
+这意味着：
+- 慢速滚动使用基础步长，提供精确控制
+- 快速滚动步长逐渐增加，提供快速缩放
+- 步长不会超过最大步长，避免过度缩放
+
+### 示例
+
+```typescript
+// 精确控制配置
+const viewer = new ViewerPro({
+  images,
+  zoomConfig: {
+    min: 0.1,
+    max: 10,
+    step: 0.1,
+    wheelBaseStep: 0.05,
+    wheelMaxStep: 0.15,
+    wheelSpeedMultiplier: 0.005
+  }
+})
+
+// 快速浏览配置
+const viewer = new ViewerPro({
+  images,
+  zoomConfig: {
+    min: 0.5,
+    max: 3,
+    step: 0.3,
+    wheelBaseStep: 0.2,
+    wheelMaxStep: 0.5,
+    wheelSpeedMultiplier: 0.02
+  }
+})
 ```

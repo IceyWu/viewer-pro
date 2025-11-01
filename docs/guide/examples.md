@@ -97,6 +97,157 @@ const newImages = [
 viewer.addImages(newImages)
 ```
 
+## 自定义 Loading
+
+自定义加载动画的简单示例：
+
+```typescript
+const customLoading = () => {
+  const wrap = document.createElement('div')
+  wrap.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: white;
+  `
+  
+  wrap.innerHTML = `
+    <div style="
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    "></div>
+    <p style="margin: 0;">加载中...</p>
+    <style>
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  `
+  
+  return wrap
+}
+
+const viewer = new ViewerPro({
+  images,
+  loadingNode: customLoading
+})
+```
+
+**了解更多：** [自定义 Loading 完整文档](/guide/custom-loading)
+
+## 自定义渲染
+
+自定义图片渲染方式的简单示例：
+
+```typescript
+const customRender = (imgObj, idx) => {
+  const box = document.createElement('div')
+  box.id = `custom-render-${idx}`
+  box.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+  `
+  
+  box.innerHTML = `
+    <img src="${imgObj.src}" 
+         style="
+           max-width: 90%;
+           max-height: 90%;
+           border-radius: 12px;
+           box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+         ">
+  `
+  
+  return box
+}
+
+const viewer = new ViewerPro({
+  images,
+  renderNode: customRender,
+  onTransformChange: ({ scale, translateX, translateY, rotation, index }) => {
+    const el = document.getElementById(`custom-render-${index}`)
+    if (el) {
+      el.style.transform = `
+        translate(${translateX}px, ${translateY}px) 
+        scale(${scale}) 
+        rotate(${rotation}deg)
+      `
+    }
+  }
+})
+```
+
+**了解更多：** [自定义渲染完整文档](/guide/custom-render)
+
+## 自定义信息面板
+
+自定义信息展示的简单示例：
+
+```typescript
+const customInfo = (imgObj, idx) => {
+  const panel = document.createElement('div')
+  panel.style.cssText = `
+    padding: 24px;
+    color: #1f2937;
+  `
+  
+  panel.innerHTML = `
+    <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">
+      ${imgObj.title || '图片信息'}
+    </h3>
+    <div style="font-size: 14px; line-height: 1.8;">
+      <p><strong>索引：</strong>${idx + 1}</p>
+      <p><strong>地址：</strong>${imgObj.src}</p>
+      ${imgObj.width ? `<p><strong>尺寸：</strong>${imgObj.width} × ${imgObj.height}</p>` : ''}
+    </div>
+  `
+  
+  return panel
+}
+
+const viewer = new ViewerPro({
+  images,
+  infoRender: customInfo
+})
+```
+
+**了解更多：** [自定义信息面板完整文档](/guide/custom-info)
+
+## 主题和配置
+
+主题切换和缩放配置示例：
+
+```typescript
+const viewer = new ViewerPro({
+  images,
+  theme: 'dark',  // 'dark' | 'light' | 'auto'
+  zoomConfig: {
+    min: 0.5,
+    max: 3,
+    step: 0.2,
+    wheelBaseStep: 0.15,
+    wheelMaxStep: 0.3
+  }
+})
+
+// 动态切换主题
+viewer.setTheme('light')
+
+// 动态修改缩放配置
+viewer.setZoomConfig({ max: 5 })
+```
+
+**了解更多：** [主题和配置完整文档](/guide/theme-and-config)
+
 ## 更多示例
 
 查看更多高级用法：
