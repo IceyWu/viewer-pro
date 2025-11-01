@@ -244,7 +244,38 @@ export class ViewerPro {
 
   private getContainerHTML(): string {
     return `
-      <div class="image-preview-overlay"></div>
+      <svg style="position: absolute; width: 0; height: 0;">
+        <defs>
+          <filter id="blur-overlay-filter" x="-100%" y="-100%" width="300%" height="300%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="2" result="turbulence"/>
+            <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="50" xChannelSelector="R" yChannelSelector="G" result="displacement"/>
+            <feGaussianBlur in="displacement" stdDeviation="40" result="blur"/>
+          </filter>
+        </defs>
+      </svg>
+      <div class="image-preview-overlay">
+        <canvas id="blurCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;"></canvas>
+        <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0;">
+          <defs>
+            <radialGradient id="grad1" cx="30%" cy="40%">
+              <stop offset="0%" style="stop-color:rgb(100,100,150);stop-opacity:0.6" />
+              <stop offset="100%" style="stop-color:rgb(50,50,80);stop-opacity:0" />
+            </radialGradient>
+            <radialGradient id="grad2" cx="70%" cy="60%">
+              <stop offset="0%" style="stop-color:rgb(150,100,100);stop-opacity:0.6" />
+              <stop offset="100%" style="stop-color:rgb(80,50,50);stop-opacity:0" />
+            </radialGradient>
+            <radialGradient id="grad3" cx="50%" cy="80%">
+              <stop offset="0%" style="stop-color:rgb(100,150,100);stop-opacity:0.6" />
+              <stop offset="100%" style="stop-color:rgb(50,80,50);stop-opacity:0" />
+            </radialGradient>
+          </defs>
+          <rect width="100%" height="100%" fill="rgba(30,30,40,0.7)"/>
+          <circle cx="30%" cy="40%" r="40%" fill="url(#grad1)" filter="url(#blur-overlay-filter)"/>
+          <circle cx="70%" cy="60%" r="40%" fill="url(#grad2)" filter="url(#blur-overlay-filter)"/>
+          <circle cx="50%" cy="80%" r="35%" fill="url(#grad3)" filter="url(#blur-overlay-filter)"/>
+        </svg>
+      </div>
       <div class="image-preview-content">
         <!-- 左侧竖向操作栏 -->
         <div class="side-toolbar" id="sideToolbar">

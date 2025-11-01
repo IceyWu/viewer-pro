@@ -13,11 +13,13 @@ dist
 demo/test
 dist-ssr
 *.local
+docs/.vitepress/cache
 
 # Monorepo
 packages/*/dist
 packages/*/node_modules
 .pnpm-store
+
 
 # Build outputs
 *.tsbuildinfo
