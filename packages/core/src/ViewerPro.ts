@@ -234,6 +234,14 @@ export class ViewerPro {
   }
 
   private initializeContainer() {
+    // 检查是否已存在预览容器，避免重复创建
+    const existingContainer = document.getElementById("imagePreview");
+    
+    if (existingContainer) {
+      // 复用现有容器，但先移除它
+      existingContainer.remove();
+    }
+    
     this.previewContainer = document.createElement("div");
     this.previewContainer.className = "image-preview-container";
     this.previewContainer.id = "imagePreview";
@@ -603,6 +611,20 @@ export class ViewerPro {
 
   public open(index: number) {
     if (index < 0 || index >= this.images.length) return;
+    
+    // 如果点击的是当前已打开的图片，先关闭再重新打开
+    const isAlreadyOpen = this.previewContainer.classList.contains("active");
+    const isSameImage = this.currentIndex === index;
+    
+    if (isAlreadyOpen && isSameImage) {
+      // 强制重新渲染：移除并重新添加 active 类
+      this.previewContainer.classList.remove("active");
+      // 使用微任务确保 DOM 更新
+      requestAnimationFrame(() => {
+        this.previewContainer.classList.add("active");
+      });
+    }
+    
     this.currentIndex = index;
     this.scale = 1;
     this.translateX = 0;
@@ -610,7 +632,10 @@ export class ViewerPro {
     this.rotation = 0;
     this.updateThumbnails(); // 先切换缩略图高亮
     this.updatePreview();
-    this.previewContainer.classList.add("active");
+    
+    if (!isAlreadyOpen || !isSameImage) {
+      this.previewContainer.classList.add("active");
+    }
     document.body.style.overflow = "hidden";
   }
 
