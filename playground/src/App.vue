@@ -21,6 +21,7 @@ const imagesV2 = computed<ViewerItem[]>(() => {
     return imgObj;
   });
 });
+const previewImages = computed<ViewerItem[]>(() => imagesV2.value.slice(0, 3));
 // console.log('🌳-----imagesV2-----', imagesV2.value);
 
 // 示例图片数据
@@ -250,7 +251,7 @@ const init = async () => {
     container.style.height = "100%";
     
     // 使用 Vue 的 render 函数将 Vue 组件渲染到容器中
-    const vnode = h(ImageMetaPanel, { data: imgObj });
+    const vnode = h(ImageMetaPanel, { data: imgObj as any });
     render(vnode, container);
     
     // 保存容器引用以便后续清理
@@ -278,6 +279,7 @@ const init = async () => {
         videoSrc: imgObj.videoSrc || "",
       };
       const container = document.getElementById(`live-photo-container-${idx}`);
+      if (!container) return;
       
       // 创建 LivePhotoViewer 实例
       new LivePhotoViewer({
@@ -364,7 +366,7 @@ function openPreview(idx: number) {
     
     <div class="image-grid">
       <div
-        v-for="(img, idx) in imagesV2"
+        v-for="(img, idx) in previewImages"
         :key="img.src"
         class="image-grid-item"
         @click="openPreview(idx)"

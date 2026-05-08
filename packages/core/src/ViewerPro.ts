@@ -13,13 +13,24 @@ import {
   rotateLeftIcon,
   rotateRightIcon,
 } from "./icons";
+import type { RenderBackend } from "./backends/RenderBackend";
+import { CssBackend } from "./backends/CssBackend";
+import {
+  BackendRouter,
+  type BackendChoice,
+  type ResolvedBackendKind,
+} from "./backends/BackendRouter";
+import { TransformEngine } from "./engine/TransformEngine";
+import type { ContentBounds } from "./engine/TransformEngine";
+import { GestureController } from "./engine/GestureController";
+import { decodeBlob } from "./engine/ImageDecoder";
 
 // Constants for better maintainability
 const ZOOM_STEP = 0.2;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
-const ZOOM_WHEEL_BASE_STEP = 0.15;      // 基础步长（增加 50%）
-const ZOOM_WHEEL_MAX_STEP = 0.3;        // 最大步长
+const ZOOM_WHEEL_BASE_STEP = 0.15; // 基础步长（增加 50%）
+const ZOOM_WHEEL_MAX_STEP = 0.3; // 最大步长
 const ZOOM_WHEEL_SPEED_MULTIPLIER = 0.01; // 速度乘数
 
 // 预览项接口
@@ -38,7 +49,11 @@ export interface LoadingContext {
   // 获取当前图片加载状态
   getImageLoadingStatus: () => Promise<{ loaded: boolean; error?: string }>;
   // 获取自定义渲染节点中的媒体元素加载状态
-  getMediaLoadingStatus: () => Promise<{ images: boolean[]; videos: boolean[]; audios: boolean[] }>;
+  getMediaLoadingStatus: () => Promise<{
+    images: boolean[];
+    videos: boolean[];
+    audios: boolean[];
+  }>;
   // 监听图片加载完成
   onImageLoaded: (callback: () => void) => void;
   // 监听图片加载失败
@@ -55,10 +70,15 @@ export interface ViewerProOptions {
   loadingNode?:
     | HTMLElement
     | (() => HTMLElement)
-    | ((item: ViewerItem, idx: number) => HTMLElement | { 
-        node: HTMLElement; 
-        done: (context: LoadingContext) => void | Promise<void>;
-      });
+    | ((
+        item: ViewerItem,
+        idx: number,
+      ) =>
+        | HTMLElement
+        | {
+            node: HTMLElement;
+            done: (context: LoadingContext) => void | Promise<void>;
+          });
   images?: ViewerItem[];
   renderNode?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
   onImageLoad?: (item: ViewerItem, idx: number) => void;
@@ -76,16 +96,31 @@ export interface ViewerProOptions {
   // 自定义右侧信息面板渲染
   infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
   // 主题设置: 'dark' | 'light' | 'auto'
-  theme?: 'dark' | 'light' | 'auto';
+  theme?: "dark" | "light" | "auto";
   // 缩放配置
   zoomConfig?: {
-    min?: number;           // 最小缩放比例，默认 0.5
-    max?: number;           // 最大缩放比例，默认 3
-    step?: number;          // 按钮缩放步长，默认 0.2
+    min?: number; // 最小缩放比例，默认 0.5
+    max?: number; // 最大缩放比例，默认 3
+    step?: number; // 按钮缩放步长，默认 0.2
     wheelBaseStep?: number; // 滚轮基础步长，默认 0.15
-    wheelMaxStep?: number;  // 滚轮最大步长，默认 0.3
+    wheelMaxStep?: number; // 滚轮最大步长，默认 0.3
     wheelSpeedMultiplier?: number; // 滚轮速度乘数，默认 0.01
   };
+  /**
+   * Render backend selection.
+   * - "auto"  (default): WebGL when available and no customRenderNode;
+   *                      otherwise CSS.
+   * - "css":   force the original CSS-transform pipeline. Required for
+   *            video / Live Photo / arbitrary DOM in customRenderNode.
+   * - "webgl": force the WebGL pipeline. Falls back to CSS only when WebGL
+   *            is entirely unavailable.
+   */
+  backend?: BackendChoice;
+  /**
+   * "linear" (default) for photographic content; "nearest" for pixel art.
+   * Only applies when the WebGL backend is active.
+   */
+  webglFiltering?: "linear" | "nearest";
 }
 
 export class ViewerPro {
@@ -120,10 +155,15 @@ export class ViewerPro {
   private customLoadingNode:
     | HTMLElement
     | (() => HTMLElement)
-    | ((item: ViewerItem, idx: number) => HTMLElement | { 
-        node: HTMLElement; 
-        done: (context: LoadingContext) => void | Promise<void>;
-      })
+    | ((
+        item: ViewerItem,
+        idx: number,
+      ) =>
+        | HTMLElement
+        | {
+            node: HTMLElement;
+            done: (context: LoadingContext) => void | Promise<void>;
+          })
     | null;
   private customRenderNode:
     | HTMLElement
@@ -147,84 +187,108 @@ export class ViewerPro {
     | null;
   private infoPanel!: HTMLElement; // 复用字段，但表现改为弹窗
   private infoCollapseBtn!: HTMLElement; // 弹窗关闭按钮
-  private progressMask!: HTMLElement;
-  private progressText!: HTMLElement;
-  private progressPercent!: HTMLElement;
-  private progressSize!: HTMLElement;
   private infoPanelContent!: HTMLElement;
 
   private images: ViewerItem[] = [];
   private currentIndex = 0;
   private lastActiveIndex = -1; // Track last active thumbnail for optimization
-  private scale = 1;
-  private translateX = 0;
-  private translateY = 0;
-  private rotation = 0; // 旋转角度（0, 90, 180, 270）
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
   private isFullscreen = false;
-  private theme: 'dark' | 'light' | 'auto' = 'dark';
+  private theme: "dark" | "light" | "auto" = "dark";
   private imageLoadToken: number = 0;
-  private currentImageLoadStatus: { loaded: boolean; error?: string } = { loaded: false };
+  private currentImageLoadStatus: { loaded: boolean; error?: string } = {
+    loaded: false,
+  };
   private imageLoadCallbacks: Array<() => void> = [];
   private imageErrorCallbacks: Array<(error: string) => void> = [];
   // Resource management
   private activeBlobUrl: string | null = null;
   private activeXHR: XMLHttpRequest | null = null;
-  // Performance optimization
-  private dragRAF: number | null = null;
-  private cachedContentDimensions: { width: number; height: number } | null = null;
+  // Cached custom render node (also a render-backend target)
   private cachedCustomNode: HTMLElement | null = null;
-  // Wheel zoom optimization
-  private _wheelRAF: number | null = null;
-  private _lastWheelTime: number = 0;
-  // Zoom configuration
-  private zoomMin: number = ZOOM_MIN;
-  private zoomMax: number = ZOOM_MAX;
-  private zoomStep: number = ZOOM_STEP;
-  private zoomWheelBaseStep: number = ZOOM_WHEEL_BASE_STEP;
-  private zoomWheelMaxStep: number = ZOOM_WHEEL_MAX_STEP;
-  private zoomWheelSpeedMultiplier: number = ZOOM_WHEEL_SPEED_MULTIPLIER;
 
-  private _boundDrag!: (e: MouseEvent | Touch) => void;
-  private _boundStopDrag!: () => void;
-  private _boundTouchDrag!: (e: TouchEvent) => void;
-  private _boundTouchEnd!: () => void;
+  // Keyboard handler kept on this instance so we can detach in destroy.
   private _boundKeyDown!: (e: KeyboardEvent) => void;
-  private _boundWheel!: (e: WheelEvent) => void;
-  private _boundContainerClick!: (e: MouseEvent) => void;
-  private _boundImageDblClick!: (e: MouseEvent) => void;
-  private _boundMouseDown!: (e: MouseEvent) => void;
-  private _boundTouchStart!: (e: TouchEvent) => void;
+
+  // Render backend (CssBackend or WebGLBackend, chosen by BackendRouter).
+  private renderBackend!: RenderBackend;
+  private backendKind: ResolvedBackendKind = "css";
+  private backendPreference: BackendChoice = "auto";
+  private webglFiltering: "linear" | "nearest" | undefined;
+  // Transform state + math (zoom / pan / rotate)
+  private transformEngine!: TransformEngine;
+  // Gesture binding (mouse / wheel / touch / dblclick / backdrop click)
+  private gestureController!: GestureController;
 
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
     this.customLoadingNode = options.loadingNode || null;
     this.customRenderNode = options.renderNode || null;
-  this.customInfoRender = options.infoRender || null;
+    this.customInfoRender = options.infoRender || null;
     this.onImageLoad =
       typeof options.onImageLoad === "function" ? options.onImageLoad : null;
     this.onContentReady =
-      typeof options.onContentReady === "function" ? options.onContentReady : null;
+      typeof options.onContentReady === "function"
+        ? options.onContentReady
+        : null;
     this.onTransformChangeCb =
       typeof options.onTransformChange === "function"
         ? options.onTransformChange
         : null;
-    this.theme = options.theme || 'dark';
+    this.theme = options.theme || "dark";
 
-    // 初始化缩放配置
-    if (options.zoomConfig) {
-      this.zoomMin = options.zoomConfig.min ?? ZOOM_MIN;
-      this.zoomMax = options.zoomConfig.max ?? ZOOM_MAX;
-      this.zoomStep = options.zoomConfig.step ?? ZOOM_STEP;
-      this.zoomWheelBaseStep = options.zoomConfig.wheelBaseStep ?? ZOOM_WHEEL_BASE_STEP;
-      this.zoomWheelMaxStep = options.zoomConfig.wheelMaxStep ?? ZOOM_WHEEL_MAX_STEP;
-      this.zoomWheelSpeedMultiplier = options.zoomConfig.wheelSpeedMultiplier ?? ZOOM_WHEEL_SPEED_MULTIPLIER;
-    }
+    // 初始化缩放配置 (defaults preserved from previous monolith)
+    this.transformEngine = new TransformEngine({
+      min: options.zoomConfig?.min ?? ZOOM_MIN,
+      max: options.zoomConfig?.max ?? ZOOM_MAX,
+      step: options.zoomConfig?.step ?? ZOOM_STEP,
+      wheelBaseStep: options.zoomConfig?.wheelBaseStep ?? ZOOM_WHEEL_BASE_STEP,
+      wheelMaxStep: options.zoomConfig?.wheelMaxStep ?? ZOOM_WHEEL_MAX_STEP,
+      wheelSpeedMultiplier:
+        options.zoomConfig?.wheelSpeedMultiplier ?? ZOOM_WHEEL_SPEED_MULTIPLIER,
+    });
 
     this.initializeContainer();
     this.initializeElements();
+
+    // Resolve render backend (CSS / WebGL) based on options + capabilities.
+    this.backendPreference = options.backend ?? "auto";
+    this.webglFiltering = options.webglFiltering;
+    const resolution = BackendRouter.resolve({
+      hasCustomRenderNode: !!this.customRenderNode,
+      preference: this.backendPreference,
+      webglOptions: {
+        filtering: this.webglFiltering,
+        onContextLost: () => this.handleWebGLContextLost(),
+      },
+    });
+    this.renderBackend = resolution.backend;
+    this.backendKind = resolution.kind;
+    // Mount backend (creates <canvas> overlay for WebGL; no-op for CSS).
+    this.renderBackend.mount?.(this.imageContainer);
+    // previewImage is the default transform target; custom render nodes
+    // will be added/removed dynamically in updatePreview().
+    this.renderBackend.addTarget(this.previewImage);
+
+    // Wire engine -> backend + sync external state (dataset/event/callback).
+    this.transformEngine.setListener(({ state, transition }) => {
+      this.renderBackend.applyTransform(state, transition);
+      if (this.imageContainer) {
+        this.imageContainer.style.cursor = "grab";
+      }
+      this.syncTransformState();
+    });
+
+    // Wire DOM events -> engine via GestureController.
+    this.gestureController = new GestureController();
+    this.gestureController.bind({
+      container: this.imageContainer,
+      engine: this.transformEngine,
+      getBounds: () => this.computeContentBounds(),
+      onBackdropClick: () => this.close(),
+      // dblclick falls back to engine.reset() (original behavior).
+    });
+    this.gestureController.bindBackdrop(this.previewContainer);
+
     this.bindMethods();
     this.bindEvents();
 
@@ -236,16 +300,16 @@ export class ViewerPro {
   private initializeContainer() {
     // 检查是否已存在预览容器，避免重复创建
     const existingContainer = document.getElementById("imagePreview");
-    
+
     if (existingContainer) {
       // 复用现有容器，但先移除它
       existingContainer.remove();
     }
-    
+
     this.previewContainer = document.createElement("div");
     this.previewContainer.className = "image-preview-container";
     this.previewContainer.id = "imagePreview";
-    this.previewContainer.setAttribute('data-theme', this.theme);
+    this.previewContainer.setAttribute("data-theme", this.theme);
     document.body.appendChild(this.previewContainer);
     this.previewContainer.innerHTML = this.getContainerHTML();
   }
@@ -316,10 +380,6 @@ export class ViewerPro {
             </div>
             <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
           </div>
-          <div class="image-progress-mask" id="imageProgressMask" style="display:none;">
-            <div class="progress-ring"><svg width="32" height="32"><circle class="progress-bg" cx="16" cy="16" r="14" stroke-width="4" fill="none"/><circle class="progress-bar" cx="16" cy="16" r="14" stroke-width="4" fill="none"/></svg></div>
-            <div class="progress-info"><div id="progressText">加载中</div><div id="progressPercent">0%</div><div id="progressSize">0MB / 0MB</div></div>
-          </div>
         </div>
         <!-- 右侧信息弹窗（灵感板/AI Assistant 风格） -->
         <div class="info-modal" id="imageInfoPanel">
@@ -334,64 +394,64 @@ export class ViewerPro {
 
   private initializeElements() {
     this.previewImage = this.previewContainer.querySelector(
-      "#previewImage"
+      "#previewImage",
     ) as HTMLImageElement;
     this.previewTitle = this.previewContainer.querySelector("#previewTitle")!;
     this.closeButton = this.previewContainer.querySelector("#closePreview")!;
     this.prevButton = this.previewContainer.querySelector(
-      "#prevImage"
+      "#prevImage",
     ) as HTMLButtonElement;
     this.nextButton = this.previewContainer.querySelector(
-      "#nextImage"
+      "#nextImage",
     ) as HTMLButtonElement;
     this.zoomInButton = this.previewContainer.querySelector(
-      "#zoomIn"
+      "#zoomIn",
     ) as HTMLButtonElement | null;
     this.zoomOutButton = this.previewContainer.querySelector(
-      "#zoomOut"
+      "#zoomOut",
     ) as HTMLButtonElement | null;
     this.resetZoomButton = this.previewContainer.querySelector(
-      "#resetZoom"
+      "#resetZoom",
     ) as HTMLButtonElement | null;
     this.fullscreenButton = this.previewContainer.querySelector(
-      "#toggleFullscreen"
+      "#toggleFullscreen",
     ) as HTMLButtonElement | null;
     this.downloadButton = this.previewContainer.querySelector(
-      "#downloadImage"
+      "#downloadImage",
     ) as HTMLButtonElement | null;
     this.toggleInfoBtn = this.previewContainer.querySelector(
-      "#toggleInfoPanelBtn"
+      "#toggleInfoPanelBtn",
     ) as HTMLButtonElement | null;
     this.toggleThumbsBtn = this.previewContainer.querySelector(
-      "#toggleThumbnails"
+      "#toggleThumbnails",
     ) as HTMLButtonElement | null;
     // 侧边栏元素
     this.sideZoomInBtn = this.previewContainer.querySelector(
-      "#sideZoomIn"
+      "#sideZoomIn",
     ) as HTMLButtonElement;
     this.sideZoomOutBtn = this.previewContainer.querySelector(
-      "#sideZoomOut"
+      "#sideZoomOut",
     ) as HTMLButtonElement;
     this.sideResetZoomBtn = this.previewContainer.querySelector(
-      "#sideResetZoom"
+      "#sideResetZoom",
     ) as HTMLButtonElement;
     this.sideRotateLeftBtn = this.previewContainer.querySelector(
-      "#sideRotateLeft"
+      "#sideRotateLeft",
     ) as HTMLButtonElement;
     this.sideRotateRightBtn = this.previewContainer.querySelector(
-      "#sideRotateRight"
+      "#sideRotateRight",
     ) as HTMLButtonElement;
     this.sideFullscreenBtn = this.previewContainer.querySelector(
-      "#sideFullscreen"
+      "#sideFullscreen",
     ) as HTMLButtonElement;
     this.sideDownloadBtn = this.previewContainer.querySelector(
-      "#sideDownload"
+      "#sideDownload",
     ) as HTMLButtonElement;
     this.sideInfoBtn = this.previewContainer.querySelector(
-      "#sideInfoOpen"
+      "#sideInfoOpen",
     ) as HTMLButtonElement;
     this.sideToggleThumbsBtn = this.previewContainer.querySelector(
-      "#sideToggleThumbnails"
+      "#sideToggleThumbnails",
     ) as HTMLButtonElement;
     this.imageCounter = this.previewContainer.querySelector("#imageCounter");
     this.loadingIndicator =
@@ -401,150 +461,90 @@ export class ViewerPro {
     this.imageContainer =
       this.previewContainer.querySelector("#imageContainer")!;
     this.infoPanel = this.previewContainer.querySelector(
-      "#imageInfoPanel"
+      "#imageInfoPanel",
     )! as HTMLElement;
     this.infoCollapseBtn = this.previewContainer.querySelector(
-      "#infoCollapseBtn"
-    )! as HTMLElement;
-    this.progressMask = this.previewContainer.querySelector(
-      "#imageProgressMask"
-    )! as HTMLElement;
-    this.progressText = this.previewContainer.querySelector(
-      "#progressText"
-    )! as HTMLElement;
-    this.progressPercent = this.previewContainer.querySelector(
-      "#progressPercent"
-    )! as HTMLElement;
-    this.progressSize = this.previewContainer.querySelector(
-      "#progressSize"
+      "#infoCollapseBtn",
     )! as HTMLElement;
     this.infoPanelContent = this.previewContainer.querySelector(
-      "#infoPanelContent"
+      "#infoPanelContent",
     )! as HTMLElement;
   }
 
   private bindMethods() {
-    this._boundDrag = this.drag.bind(this);
-    this._boundStopDrag = this.stopDrag.bind(this);
-    this._boundTouchDrag = (e: TouchEvent) => {
-      e.preventDefault();
-      this.drag(e.touches[0]);
-    };
-    this._boundTouchEnd = this.stopDrag.bind(this);
+    // Only the keyboard handler is owned by ViewerPro now; everything
+    // else (mouse / wheel / touch / dblclick / backdrop) lives in
+    // GestureController.
     this._boundKeyDown = this.handleKeyDown.bind(this);
-    this._boundWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      
-      // 使用 RAF 替代节流，确保流畅性
-      if (this._wheelRAF !== null) {
-        return; // 如果已有待处理的缩放，跳过
-      }
-      
-      this._wheelRAF = requestAnimationFrame(() => {
-        this._wheelRAF = null;
-        this.handleWheelZoom(e);
-      });
-    };
-    this._boundContainerClick = (e: MouseEvent) => {
-      if (e.target === this.previewContainer) {
-        this.close();
-      }
-    };
-    this._boundImageDblClick = (e: MouseEvent) => {
-      this.resetZoom();
-    };
-    this._boundMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!this.shouldStartDrag(target)) return;
-      this.startDrag(e);
-    };
-    this._boundTouchStart = (e: TouchEvent) => {
-      const target = e.target as HTMLElement;
-      if (!this.shouldStartDrag(target)) return;
-      if (e.touches && e.touches[0]) this.startDrag(e.touches[0]);
-    };
   }
 
   private bindEvents() {
+    const step = () => this.transformEngine.getConfig().step;
+    const bounds = () => this.computeContentBounds();
+
     this.closeButton.addEventListener("click", () => this.close());
     this.prevButton.addEventListener("click", () => this.navigate(-1));
     this.nextButton.addEventListener("click", () => this.navigate(1));
     if (this.zoomInButton)
-      this.zoomInButton.addEventListener("click", () => this.zoom(this.zoomStep));
+      this.zoomInButton.addEventListener("click", () =>
+        this.transformEngine.zoomBy(step(), bounds()),
+      );
     if (this.zoomOutButton)
-      this.zoomOutButton.addEventListener("click", () => this.zoom(-this.zoomStep));
+      this.zoomOutButton.addEventListener("click", () =>
+        this.transformEngine.zoomBy(-step(), bounds()),
+      );
     if (this.resetZoomButton)
-      this.resetZoomButton.addEventListener("click", () => this.resetZoom());
+      this.resetZoomButton.addEventListener("click", () =>
+        this.transformEngine.reset(),
+      );
     if (this.fullscreenButton)
       this.fullscreenButton.addEventListener("click", () =>
-        this.toggleFullscreen()
+        this.toggleFullscreen(),
       );
     if (this.downloadButton)
       this.downloadButton.addEventListener("click", () =>
-        this.downloadCurrentImage()
+        this.downloadCurrentImage(),
       );
     if (this.toggleInfoBtn)
       this.toggleInfoBtn.addEventListener("click", () =>
-        this.toggleInfoPanel()
+        this.toggleInfoPanel(),
       );
     if (this.toggleThumbsBtn)
       this.toggleThumbsBtn.addEventListener("click", () =>
-        this.toggleThumbnails()
+        this.toggleThumbnails(),
       );
     // 侧边栏事件
-    this.sideZoomInBtn.addEventListener("click", () => this.zoom(this.zoomStep));
-    this.sideZoomOutBtn.addEventListener("click", () => this.zoom(-this.zoomStep));
-    this.sideResetZoomBtn.addEventListener("click", () => this.resetZoom());
-    this.sideRotateLeftBtn.addEventListener("click", () => this.rotate(-90));
-    this.sideRotateRightBtn.addEventListener("click", () => this.rotate(90));
+    this.sideZoomInBtn.addEventListener("click", () =>
+      this.transformEngine.zoomBy(step(), bounds()),
+    );
+    this.sideZoomOutBtn.addEventListener("click", () =>
+      this.transformEngine.zoomBy(-step(), bounds()),
+    );
+    this.sideResetZoomBtn.addEventListener("click", () =>
+      this.transformEngine.reset(),
+    );
+    this.sideRotateLeftBtn.addEventListener("click", () =>
+      this.transformEngine.rotate(-90),
+    );
+    this.sideRotateRightBtn.addEventListener("click", () =>
+      this.transformEngine.rotate(90),
+    );
     this.sideFullscreenBtn.addEventListener("click", () =>
-      this.toggleFullscreen()
+      this.toggleFullscreen(),
     );
     this.sideDownloadBtn.addEventListener("click", () =>
-      this.downloadCurrentImage()
+      this.downloadCurrentImage(),
     );
     this.sideInfoBtn.addEventListener("click", () => this.toggleInfoPanel());
     this.sideToggleThumbsBtn.addEventListener("click", () =>
-      this.toggleThumbnails()
+      this.toggleThumbnails(),
     );
-    // 底部迷你控制已移除
     document.addEventListener("keydown", this._boundKeyDown);
-    // 将拖拽与缩放事件绑定到容器，兼容 renderNode 模式
-    this.imageContainer.addEventListener("mousedown", this._boundMouseDown);
-    this.imageContainer.addEventListener("touchstart", this._boundTouchStart, { passive: true });
-    this.imageContainer.addEventListener("wheel", this._boundWheel);
-    this.previewContainer.addEventListener("click", this._boundContainerClick);
-    this.imageContainer.addEventListener("dblclick", this._boundImageDblClick);
     // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
     this.infoCollapseBtn.addEventListener("click", (evt) => {
       evt.stopPropagation();
       this.closeInfoPanel();
     });
-  }
-
-  // 判断是否应开始拖拽：排除交互控件，仅对图片或自定义节点生效
-  private shouldStartDrag(target: HTMLElement): boolean {
-    if (
-      target.closest(".arrow-btn, .info-modal, .side-toolbar")
-    )
-      return false;
-    return !!target.closest(
-      "#previewImage, .custom-render-node, #imageContainer"
-    );
-  }
-
-  private throttle<T extends (...args: any[]) => any>(
-    func: T,
-    limit: number
-  ): T {
-    let inThrottle: boolean;
-    return ((...args: Parameters<T>) => {
-      if (!inThrottle) {
-        func.apply(this, args);
-        inThrottle = true;
-        setTimeout(() => (inThrottle = false), limit);
-      }
-    }) as T;
   }
 
   public init() {
@@ -585,37 +585,42 @@ export class ViewerPro {
       }
       this.lastActiveIndex = this.currentIndex;
     }
-    
+
     // 自动滚动到当前激活的缩略图
     this.scrollToActiveThumbnail();
   }
 
   // 滚动到当前激活的缩略图
   private scrollToActiveThumbnail() {
-    if (this.currentIndex < 0 || this.currentIndex >= this.thumbnailNav.children.length) {
+    if (
+      this.currentIndex < 0 ||
+      this.currentIndex >= this.thumbnailNav.children.length
+    ) {
       return;
     }
-    
-    const activeThumbnail = this.thumbnailNav.children[this.currentIndex] as HTMLElement;
+
+    const activeThumbnail = this.thumbnailNav.children[
+      this.currentIndex
+    ] as HTMLElement;
     if (!activeThumbnail) return;
-    
+
     // 使用 scrollIntoView 滚动到可见区域
     requestAnimationFrame(() => {
       activeThumbnail.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center'
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
       });
     });
   }
 
   public open(index: number) {
     if (index < 0 || index >= this.images.length) return;
-    
+
     // 如果点击的是当前已打开的图片，先关闭再重新打开
     const isAlreadyOpen = this.previewContainer.classList.contains("active");
     const isSameImage = this.currentIndex === index;
-    
+
     if (isAlreadyOpen && isSameImage) {
       // 强制重新渲染：移除并重新添加 active 类
       this.previewContainer.classList.remove("active");
@@ -624,15 +629,9 @@ export class ViewerPro {
         this.previewContainer.classList.add("active");
       });
     }
-    
-    this.currentIndex = index;
-    this.scale = 1;
-    this.translateX = 0;
-    this.translateY = 0;
-    this.rotation = 0;
-    this.updateThumbnails(); // 先切换缩略图高亮
-    this.updatePreview();
-    
+
+    this.setCurrentIndex(index);
+
     if (!isAlreadyOpen || !isSameImage) {
       this.previewContainer.classList.add("active");
     }
@@ -649,16 +648,22 @@ export class ViewerPro {
 
   // 检查并触发图片回调（用于处理图片已经加载完成的情况）
   private checkAndTriggerImageCallbacks() {
-    if (this.currentImageLoadStatus.loaded && this.imageLoadCallbacks.length > 0) {
-      this.imageLoadCallbacks.forEach(callback => {
+    if (
+      this.currentImageLoadStatus.loaded &&
+      this.imageLoadCallbacks.length > 0
+    ) {
+      this.imageLoadCallbacks.forEach((callback) => {
         try {
           callback();
         } catch (e) {
           console.warn("Image load callback error:", e);
         }
       });
-    } else if (this.currentImageLoadStatus.error && this.imageErrorCallbacks.length > 0) {
-      this.imageErrorCallbacks.forEach(callback => {
+    } else if (
+      this.currentImageLoadStatus.error &&
+      this.imageErrorCallbacks.length > 0
+    ) {
+      this.imageErrorCallbacks.forEach((callback) => {
         try {
           callback(this.currentImageLoadStatus.error || "未知错误");
         } catch (e) {
@@ -670,8 +675,8 @@ export class ViewerPro {
 
   // 监听自定义渲染节点中的图片加载
   private monitorCustomNodeImageLoading(node: HTMLElement) {
-    const images = node.querySelectorAll('img');
-    
+    const images = node.querySelectorAll("img");
+
     if (images.length === 0) {
       // 如果没有图片，设置为已完成状态
       this.currentImageLoadStatus = { loaded: true };
@@ -697,7 +702,10 @@ export class ViewerPro {
 
         img.onerror = () => {
           hasError = true;
-          this.currentImageLoadStatus = { loaded: false, error: "图片加载失败" };
+          this.currentImageLoadStatus = {
+            loaded: false,
+            error: "图片加载失败",
+          };
         };
       }
     });
@@ -736,7 +744,7 @@ export class ViewerPro {
     this._loadingDoneCallback = null;
 
     const currentImage = this.images[this.currentIndex];
-  this.showLoading(currentImage, this.currentIndex);
+    this.showLoading(currentImage, this.currentIndex);
     this.errorMessage.style.display = "none";
     this.previewImage.style.display = "none";
     this.previewTitle.textContent = currentImage.title || "图片预览";
@@ -744,12 +752,12 @@ export class ViewerPro {
       this.imageCounter.textContent = `${this.currentIndex + 1} / ${
         this.images.length
       }`;
-    this.showProgress(0, 0, 0);
 
     // 如果提供了自定义渲染节点，优先使用并跳过图片加载
     if (this.customRenderNode) {
       // Clear cached custom node reference
       if (this.cachedCustomNode) {
+        this.renderBackend.removeTarget(this.cachedCustomNode);
         this.cachedCustomNode.remove();
         this.cachedCustomNode = null;
       }
@@ -765,32 +773,28 @@ export class ViewerPro {
         this.imageContainer.appendChild(node);
         // Cache the custom node reference for performance
         this.cachedCustomNode = node;
+        // Register as a render-backend target so transforms apply.
+        this.renderBackend.addTarget(node);
         // Clear previewImage src if it was using a blob
         if (this.previewImage.src) {
           this.previewImage.src = "";
         }
         // 在自定义渲染模式下：监听渲染节点中的图片加载
         this.errorMessage.style.display = "none";
-        
+
         // 监听自定义渲染节点中的图片加载
         this.monitorCustomNodeImageLoading(node);
-        
+
         let maybePromise: any = null;
         if (this.onImageLoad) {
           try {
-            maybePromise = this.onImageLoad(
-              currentImage,
-              this.currentIndex
-            );
+            maybePromise = this.onImageLoad(currentImage, this.currentIndex);
           } catch (e) {
             console.warn("onImageLoad 执行出错:", e);
           }
         }
         this.updateThumbnails();
         this.setInfoPanelContent(currentImage, this.currentIndex);
-        // 自定义渲染不使用网络下载进度
-        this.hideProgress();
-        
         // 如果有自定义 loading 控制，则不自动隐藏 loading
         if (!this._loadingDoneCallback) {
           // 若 onImageLoad 返回 Promise，则等待后再隐藏 loading
@@ -798,19 +802,21 @@ export class ViewerPro {
             try {
               (maybePromise as Promise<any>).then(
                 () => this.hideLoading(),
-                () => this.hideLoading()
+                () => this.hideLoading(),
               );
             } catch {
               this.hideLoading();
             }
           } else {
             // 保证 loading 至少渲染一帧
-            requestAnimationFrame(() => requestAnimationFrame(() => this.hideLoading()));
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => this.hideLoading()),
+            );
           }
         }
-        
+
         // 复位拖拽/缩放状态
-        this.resetZoom();
+        this.transformEngine.reset();
         return;
       }
     }
@@ -823,13 +829,6 @@ export class ViewerPro {
 
     // 设置超时
     xhr.timeout = 30000; // 30秒超时
-
-    xhr.onprogress = (e) => {
-      if (thisToken !== this.imageLoadToken) return;
-      if (e.lengthComputable) {
-        this.showProgress(e.loaded / e.total, e.loaded, e.total);
-      }
-    };
 
     xhr.onload = () => {
       if (thisToken !== this.imageLoadToken) return;
@@ -844,23 +843,55 @@ export class ViewerPro {
 
         this.previewImage.src = url;
         this.previewImage.style.display = "block";
-        this.hideProgress();
 
         const oldNode = this.imageContainer.querySelector(
-          ".custom-render-node"
+          ".custom-render-node",
         );
-        if (oldNode) oldNode.remove();
+        if (oldNode) {
+          if (this.cachedCustomNode === oldNode) {
+            this.renderBackend.removeTarget(this.cachedCustomNode);
+            this.cachedCustomNode = null;
+          } else if (oldNode instanceof HTMLElement) {
+            this.renderBackend.removeTarget(oldNode);
+          }
+          oldNode.remove();
+        }
 
         const previewImg = document.getElementById("previewImage");
         if (previewImg) {
           this.previewImage = previewImg as HTMLImageElement;
         }
-        this.updateImageTransform();
+        // Hand the source to the active backend.
+        //  - CssBackend: no-op; relies on `previewImage.src` set above.
+        //  - WebGLBackend: prefer `createImageBitmap` for off-main-thread
+        //    decode; fall back to passing the <img> element.
+        // Run async without blocking; on failure (e.g. MAX_TEXTURE_SIZE),
+        // live-swap to CssBackend so the user still sees something.
+        if (this.backendKind === "webgl") {
+          const token = this.imageLoadToken;
+          decodeBlob(blob)
+            .then((decoded) => {
+              if (token !== this.imageLoadToken) return; // navigated away
+              const source =
+                decoded.kind === "bitmap" ? decoded.bitmap : decoded.image;
+              return this.renderBackend.setImageSource?.(source);
+            })
+            .catch((err) => {
+              console.warn(
+                "[viewer-pro] WebGL image upload failed; falling back to CSS:",
+                err,
+              );
+              this.swapToCssBackend();
+            });
+        }
+        // Re-emit current engine state to apply transform to the (possibly
+        // re-found) preview image element.
+        this.transformEngine.reconstrain(this.computeContentBounds(), "normal");
 
         // 更新图片加载状态
         this.currentImageLoadStatus = { loaded: true };
         // 触发图片加载完成回调
-        this.imageLoadCallbacks.forEach(callback => {
+        this.imageLoadCallbacks.forEach((callback) => {
           try {
             callback();
           } catch (e) {
@@ -869,7 +900,7 @@ export class ViewerPro {
         });
       } else {
         this.activeXHR = null;
-        this.handleImageError('http', xhr.status);
+        this.handleImageError("http", xhr.status);
       }
 
       if (this.onImageLoad) {
@@ -881,20 +912,20 @@ export class ViewerPro {
         this.notifyContentReady();
       }
 
-  this.updateThumbnails();
-  this.setInfoPanelContent(currentImage, this.currentIndex);
+      this.updateThumbnails();
+      this.setInfoPanelContent(currentImage, this.currentIndex);
     };
 
     xhr.onerror = () => {
       if (thisToken !== this.imageLoadToken) return;
       this.activeXHR = null;
-      this.handleImageError('network');
+      this.handleImageError("network");
     };
 
     xhr.ontimeout = () => {
       if (thisToken !== this.imageLoadToken) return;
       this.activeXHR = null;
-      this.handleImageError('timeout');
+      this.handleImageError("timeout");
     };
 
     xhr.send();
@@ -919,31 +950,33 @@ export class ViewerPro {
     }
   }
 
-  private handleImageError(errorType: 'network' | 'timeout' | 'http' = 'network', httpStatus?: number) {
-    this.hideProgress();
+  private handleImageError(
+    errorType: "network" | "timeout" | "http" = "network",
+    httpStatus?: number,
+  ) {
     this.hideLoading();
     this.errorMessage.style.display = "block";
-    
+
     let errorMessage: string;
     switch (errorType) {
-      case 'timeout':
+      case "timeout":
         errorMessage = "图片加载超时，请重试";
         break;
-      case 'http':
-        errorMessage = `图片加载失败 (HTTP ${httpStatus || 'error'})`;
+      case "http":
+        errorMessage = `图片加载失败 (HTTP ${httpStatus || "error"})`;
         break;
-      case 'network':
+      case "network":
       default:
         errorMessage = "图片加载失败，请检查网络连接或图片地址";
         break;
     }
-    
+
     this.errorMessage.textContent = errorMessage;
-    
+
     // 更新图片加载状态
     this.currentImageLoadStatus = { loaded: false, error: errorMessage };
     // 触发图片加载失败回调
-    this.imageErrorCallbacks.forEach(callback => {
+    this.imageErrorCallbacks.forEach((callback) => {
       try {
         callback(errorMessage);
       } catch (e) {
@@ -989,17 +1022,22 @@ export class ViewerPro {
   private showLoading(img?: ViewerItem, idx?: number) {
     this.loadingIndicator.innerHTML = "";
     this.loadingIndicator.style.display = "flex";
-    
+
     if (this.customLoadingNode) {
       try {
         let node: unknown;
         const ln = this.customLoadingNode as
           | HTMLElement
           | (() => HTMLElement)
-          | ((item: ViewerItem, idx: number) => HTMLElement | { 
-              node: HTMLElement; 
-              done: (context: LoadingContext) => void | Promise<void>;
-            });
+          | ((
+              item: ViewerItem,
+              idx: number,
+            ) =>
+              | HTMLElement
+              | {
+                  node: HTMLElement;
+                  done: (context: LoadingContext) => void | Promise<void>;
+                });
 
         if (ln instanceof HTMLElement) {
           node = ln.cloneNode(true) as HTMLElement;
@@ -1013,12 +1051,18 @@ export class ViewerPro {
           } else {
             result = (ln as () => any)();
           }
-          if (result && typeof result === "object" && "node" in result && typeof result.node === "object") {
+          if (
+            result &&
+            typeof result === "object" &&
+            "node" in result &&
+            typeof result.node === "object"
+          ) {
             node = result.node;
             if (typeof result.done === "function") {
               // 创建 LoadingContext
               const context: LoadingContext = {
-                getImageLoadingStatus: () => Promise.resolve(this.currentImageLoadStatus),
+                getImageLoadingStatus: () =>
+                  Promise.resolve(this.currentImageLoadStatus),
                 getMediaLoadingStatus: () => this.getMediaLoadingStatus(),
                 onImageLoaded: (callback: () => void) => {
                   this.imageLoadCallbacks.push(callback);
@@ -1028,41 +1072,46 @@ export class ViewerPro {
                 },
                 getCurrentImage: () => ({
                   image: this.images[this.currentIndex],
-                  index: this.currentIndex
+                  index: this.currentIndex,
                 }),
                 closeLoading: () => {
                   this.closeLoading();
-                }
+                },
               };
-              
+
               // 先添加 DOM 节点，再调用 done 回调
               if (node instanceof HTMLElement) {
                 this.loadingIndicator.appendChild(node);
               }
-              
+
               // 使用 nextTick 确保 DOM 已经添加到页面中，并延迟执行 done 回调
               setTimeout(() => {
                 const doneResult = result.done(context);
-                
+
                 // 等待 done 回调完成后再检查图片状态
                 const checkAfterDone = () => {
                   setTimeout(() => {
                     this.checkAndTriggerImageCallbacks();
                   }, 50);
                 };
-                
+
                 if (doneResult instanceof Promise) {
-                  doneResult.then(() => {
-                    checkAfterDone();
-                  }).catch((error) => {
-                    console.warn("Loading done callback promise rejected:", error);
-                    checkAfterDone();
-                  });
+                  doneResult
+                    .then(() => {
+                      checkAfterDone();
+                    })
+                    .catch((error) => {
+                      console.warn(
+                        "Loading done callback promise rejected:",
+                        error,
+                      );
+                      checkAfterDone();
+                    });
                 } else {
                   checkAfterDone();
                 }
               }, 0);
-              
+
               this._loadingDoneCallback = () => {
                 if (typeof result.done === "function") {
                   // 如果需要，可以再次调用 done
@@ -1117,212 +1166,143 @@ export class ViewerPro {
   }
 
   // 获取自定义渲染节点中的媒体元素加载状态
-  private async getMediaLoadingStatus(): Promise<{ images: boolean[]; videos: boolean[]; audios: boolean[] }> {
-    const customRenderNode = this.imageContainer.querySelector('.custom-render-node');
+  private async getMediaLoadingStatus(): Promise<{
+    images: boolean[];
+    videos: boolean[];
+    audios: boolean[];
+  }> {
+    const customRenderNode = this.imageContainer.querySelector(
+      ".custom-render-node",
+    );
     if (!customRenderNode) {
       return { images: [], videos: [], audios: [] };
     }
 
-    const images = Array.from(customRenderNode.querySelectorAll('img'));
-    const videos = Array.from(customRenderNode.querySelectorAll('video'));
-    const audios = Array.from(customRenderNode.querySelectorAll('audio'));
+    const images = Array.from(customRenderNode.querySelectorAll("img"));
+    const videos = Array.from(customRenderNode.querySelectorAll("video"));
+    const audios = Array.from(customRenderNode.querySelectorAll("audio"));
 
-    const imageStatuses = images.map(img => img.complete && img.naturalHeight !== 0);
-    const videoStatuses = videos.map(video => video.readyState >= 3); // HAVE_FUTURE_DATA
-    const audioStatuses = audios.map(audio => audio.readyState >= 3);
+    const imageStatuses = images.map(
+      (img) => img.complete && img.naturalHeight !== 0,
+    );
+    const videoStatuses = videos.map((video) => video.readyState >= 3); // HAVE_FUTURE_DATA
+    const audioStatuses = audios.map((audio) => audio.readyState >= 3);
 
     return {
       images: imageStatuses,
       videos: videoStatuses,
-      audios: audioStatuses
+      audios: audioStatuses,
     };
   }
 
   private navigate(direction: number) {
-    const newIndex = this.currentIndex + direction;
-    if (newIndex >= 0 && newIndex < this.images.length) {
-      this.currentIndex = newIndex;
-      this.resetZoom();
-      this.updateThumbnails(); // 先切换缩略图高亮
-      this.updatePreview();
-    }
+    this.setCurrentIndex(this.currentIndex + direction);
   }
 
-  private zoom(delta: number) {
-    const newScale = Math.max(this.zoomMin, Math.min(this.zoomMax, this.scale + delta));
-    if (newScale !== this.scale) {
-      this.scale = newScale;
-      
-      // 缩放后调整位置，防止图片超出边界
-      if (this.scale <= 1) {
-        // 缩放到1或更小时，重置到中心
-        this.translateX = 0;
-        this.translateY = 0;
-      } else {
-        // 缩放大于1时，约束位置在合理范围内
-        this.constrainTranslation();
-      }
-      
-      this.updateImageTransform();
-    }
+  private setCurrentIndex(index: number) {
+    if (index < 0 || index >= this.images.length) return;
+    this.currentIndex = index;
+    this.transformEngine.resetSilently();
+    this.updateThumbnails();
+    this.updatePreview();
   }
 
-  // 约束平移位置在合理范围内
-  private constrainTranslation() {
-    const containerRect = this.imageContainer.getBoundingClientRect();
-    const contentDimensions = this.calculateContentDimensions(containerRect);
-    const { width: contentWidth, height: contentHeight } = contentDimensions;
-    
-    // Calculate scaled dimensions
-    const scaledWidth = contentWidth * this.scale;
-    const scaledHeight = contentHeight * this.scale;
-    
-    // Calculate max translation to keep image edges within viewport
-    const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
-    const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
-    
-    // Constrain translation
-    this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
-    this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
-  }
+  /**
+   * Compute current content bounds for the GestureController and engine
+   * constraints. Replaces the previous `calculateContentDimensions` helper
+   * but additionally returns container dimensions in a single bundle.
+   */
+  private computeContentBounds(): ContentBounds | null {
+    if (!this.imageContainer) return null;
+    const rect = this.imageContainer.getBoundingClientRect();
 
-  private normalizeDelta(e: WheelEvent): number {
-    let delta = e.deltaY;
-    
-    // 标准化不同的 deltaMode
-    if (e.deltaMode === 1) {
-      // DOM_DELTA_LINE
-      delta *= 16; // 假设每行 16px
-    } else if (e.deltaMode === 2) {
-      // DOM_DELTA_PAGE
-      delta *= 800; // 假设每页 800px
-    }
-    
-    // 限制极端值
-    return Math.max(-100, Math.min(100, delta));
-  }
+    let contentWidth = rect.width;
+    let contentHeight = rect.height;
 
-  private calculateDynamicZoomStep(normalizedDelta: number): number {
-    const absDelta = Math.abs(normalizedDelta);
-    
-    // 基础步长 + 速度加成
-    const speedBonus = Math.min(
-      absDelta * this.zoomWheelSpeedMultiplier,
-      this.zoomWheelMaxStep - this.zoomWheelBaseStep
-    );
-    
-    return this.zoomWheelBaseStep + speedBonus;
-  }
-
-  private handleWheelZoom(e: WheelEvent): void {
-    // 标准化 deltaY（不同浏览器和设备差异很大）
-    const normalizedDelta = this.normalizeDelta(e);
-    
-    // 计算动态步长
-    const zoomStep = this.calculateDynamicZoomStep(normalizedDelta);
-    
-    // 应用缩放
-    const direction = normalizedDelta < 0 ? 1 : -1;
-    this.zoom(direction * zoomStep);
-  }
-
-  private resetZoom() {
-    this.scale = 1;
-    this.translateX = 0;
-    this.translateY = 0;
-    this.rotation = 0;
-    this.updateImageTransform();
-  }
-
-  private rotate(degrees: number) {
-    // 累积旋转角度，不做取模，让 CSS 自然过渡
-    this.rotation += degrees;
-    this.updateImageTransform();
-  }
-
-  private updateImageTransform(skipTransition: boolean = false, useSpringTransition: boolean = false) {
-    const transformValue = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
-    
-    // 确定过渡效果
-    let transition = "transform 0.3s ease";
-    if (skipTransition) {
-      transition = "none";
-    } else if (useSpringTransition) {
-      transition = "transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)";
-    }
-    
-    // 更新预览图片
-    if (this.previewImage) {
-      this.previewImage.style.transition = transition;
-      this.previewImage.style.transform = transformValue;
-    }
-    
-    // 更新自定义渲染节点（如果存在）
     if (this.cachedCustomNode) {
-      this.cachedCustomNode.style.transition = transition;
-      this.cachedCustomNode.style.transform = transformValue;
+      contentWidth = this.cachedCustomNode.offsetWidth;
+      contentHeight = this.cachedCustomNode.offsetHeight;
+    } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
+      const imgAspect =
+        this.previewImage.naturalWidth / this.previewImage.naturalHeight;
+      const containerAspect = rect.width / rect.height;
+      if (imgAspect > containerAspect) {
+        const w = Math.min(this.previewImage.naturalWidth, rect.width);
+        contentWidth = w;
+        contentHeight = w / imgAspect;
+      } else {
+        const h = Math.min(this.previewImage.naturalHeight, rect.height);
+        contentWidth = h * imgAspect;
+        contentHeight = h;
+      }
     }
 
-    // 根据缩放状态更新容器光标（允许任何缩放级别拖动）
-    if (this.imageContainer) {
-      this.imageContainer.style.cursor = "grab";
-    }
-
-    // 同步到外部（无论是否使用 renderNode）
-    this.syncTransformState();
+    return {
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+      contentWidth,
+      contentHeight,
+    };
   }
 
   // 将变换状态通过 dataset/CSS 变量/自定义事件/回调抛出
   private syncTransformState() {
     // Only sync if there are listeners (callback or event listeners)
-    if (!this.onTransformChangeCb && !this.previewContainer.hasAttribute('data-has-transform-listener')) {
+    if (
+      !this.onTransformChangeCb &&
+      !this.previewContainer.hasAttribute("data-has-transform-listener")
+    ) {
       return;
     }
-    
+
+    const { scale, translateX, translateY, rotation } =
+      this.transformEngine.getState();
     const state = {
-      scale: this.scale,
-      translateX: this.translateX,
-      translateY: this.translateY,
-      rotation: this.rotation,
+      scale,
+      translateX,
+      translateY,
+      rotation,
       index: this.currentIndex,
       image: this.images[this.currentIndex] || null,
     };
-    
+
     // Only update dataset if needed (for external reading)
-    if (this.previewContainer.dataset.scale !== String(this.scale)) {
-      this.previewContainer.dataset.scale = String(this.scale);
-      this.previewContainer.dataset.tx = String(this.translateX);
-      this.previewContainer.dataset.ty = String(this.translateY);
-      this.previewContainer.dataset.rotation = String(this.rotation);
+    if (this.previewContainer.dataset.scale !== String(scale)) {
+      this.previewContainer.dataset.scale = String(scale);
+      this.previewContainer.dataset.tx = String(translateX);
+      this.previewContainer.dataset.ty = String(translateY);
+      this.previewContainer.dataset.rotation = String(rotation);
       this.previewContainer.dataset.index = String(this.currentIndex);
     }
-    
+
     // CSS 变量，供外部样式或自定义节点使用（仅在有自定义节点时）
     if (this.cachedCustomNode) {
       const host = this.imageContainer as HTMLElement;
-      host.style.setProperty("--vp-scale", String(this.scale));
-      host.style.setProperty("--vp-tx", `${this.translateX}px`);
-      host.style.setProperty("--vp-ty", `${this.translateY}px`);
-      host.style.setProperty("--vp-rotation", `${this.rotation}deg`);
+      host.style.setProperty("--vp-scale", String(scale));
+      host.style.setProperty("--vp-tx", `${translateX}px`);
+      host.style.setProperty("--vp-ty", `${translateY}px`);
+      host.style.setProperty("--vp-rotation", `${rotation}deg`);
     }
-    
+
     // 自定义事件（仅在有监听器时触发）
-    if (this.previewContainer.hasAttribute('data-has-transform-listener')) {
+    if (this.previewContainer.hasAttribute("data-has-transform-listener")) {
       const evt = new CustomEvent("viewerpro:transform", { detail: state });
       this.previewContainer.dispatchEvent(evt);
     }
-    
+
     // 回调
     if (this.onTransformChangeCb) this.onTransformChangeCb(state);
   }
 
   // 外部可主动读取当前状态
   public getState() {
+    const { scale, translateX, translateY, rotation } =
+      this.transformEngine.getState();
     return {
-      scale: this.scale,
-      translateX: this.translateX,
-      translateY: this.translateY,
-      rotation: this.rotation,
+      scale,
+      translateX,
+      translateY,
+      rotation,
       index: this.currentIndex,
       image: this.images[this.currentIndex] || null,
     };
@@ -1337,150 +1317,22 @@ export class ViewerPro {
       rotation: number;
       index: number;
       image: ViewerItem | null;
-    }) => void
+    }) => void,
   ) {
     const handler = (e: Event) => listener((e as CustomEvent).detail);
     this.previewContainer.addEventListener(
       "viewerpro:transform",
-      handler as EventListener
+      handler as EventListener,
     );
     return () =>
       this.previewContainer.removeEventListener(
         "viewerpro:transform",
-        handler as EventListener
+        handler as EventListener,
       );
   }
 
-  private startDrag(e: MouseEvent | Touch) {
-    // 允许任何缩放级别下拖动（小于1时松手会回弹）
-    if ("preventDefault" in e && typeof e.preventDefault === "function") {
-      e.preventDefault();
-    }
-    this.isDragging = true;
-    this.startX = e.clientX - this.translateX;
-    this.startY = e.clientY - this.translateY;
-    this.imageContainer.style.cursor = "grabbing";
-    document.body.style.userSelect = "none";
-    
-    // Cache content dimensions at drag start for better performance
-    const containerRect = this.imageContainer.getBoundingClientRect();
-    this.cachedContentDimensions = this.calculateContentDimensions(containerRect);
-    
-    document.addEventListener("mousemove", this._boundDrag);
-    document.addEventListener("mouseup", this._boundStopDrag);
-    document.addEventListener("touchmove", this._boundTouchDrag, {
-      passive: false,
-    });
-    document.addEventListener("touchend", this._boundTouchEnd);
-  }
-
-  private drag(e: MouseEvent | Touch) {
-    if (!this.isDragging) return;
-    if ("preventDefault" in e && typeof e.preventDefault === "function") {
-      e.preventDefault();
-    }
-
-    // Cancel previous RAF to avoid stacking
-    if (this.dragRAF !== null) {
-      cancelAnimationFrame(this.dragRAF);
-    }
-
-    // Use requestAnimationFrame for smooth dragging
-    this.dragRAF = requestAnimationFrame(() => {
-      this.dragRAF = null;
-      
-      const containerRect = this.imageContainer.getBoundingClientRect();
-      
-      // Use cached dimensions if available, otherwise calculate
-      if (!this.cachedContentDimensions) {
-        this.cachedContentDimensions = this.calculateContentDimensions(containerRect);
-      }
-      
-      const { width: contentWidth, height: contentHeight } = this.cachedContentDimensions;
-      
-      this.translateX = e.clientX - this.startX;
-      this.translateY = e.clientY - this.startY;
-
-      // 只在缩放大于1时约束拖动范围，小于等于1时允许自由拖动
-      if (this.scale > 1) {
-        // Calculate scaled dimensions
-        const scaledWidth = contentWidth * this.scale;
-        const scaledHeight = contentHeight * this.scale;
-        
-        // Calculate max translation to keep image edges within viewport
-        const maxTranslateX = Math.max(0, (scaledWidth - containerRect.width) / 2);
-        const maxTranslateY = Math.max(0, (scaledHeight - containerRect.height) / 2);
-        
-        // Constrain translation
-        this.translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, this.translateX));
-        this.translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, this.translateY));
-      }
-
-      this.updateImageTransform(true); // Pass true to skip transition during drag
-    });
-  }
-
-  private calculateContentDimensions(containerRect: DOMRect): { width: number; height: number } {
-    // Use cached custom node reference to avoid DOM query
-    if (this.cachedCustomNode) {
-      return {
-        width: this.cachedCustomNode.offsetWidth,
-        height: this.cachedCustomNode.offsetHeight
-      };
-    } else if (this.previewImage && this.previewImage.naturalWidth > 0) {
-      const imgAspect = this.previewImage.naturalWidth / this.previewImage.naturalHeight;
-      const containerAspect = containerRect.width / containerRect.height;
-      
-      if (imgAspect > containerAspect) {
-        const width = Math.min(this.previewImage.naturalWidth, containerRect.width);
-        return { width, height: width / imgAspect };
-      } else {
-        const height = Math.min(this.previewImage.naturalHeight, containerRect.height);
-        return { width: height * imgAspect, height };
-      }
-    }
-    
-    return {
-      width: containerRect.width,
-      height: containerRect.height
-    };
-  }
-
-  private stopDrag() {
-    if (!this.isDragging) return;
-    this.isDragging = false;
-    this.imageContainer.style.cursor = "grab"; // 允许任何缩放级别拖动
-    document.body.style.userSelect = "";
-    
-    // Cancel any pending RAF
-    if (this.dragRAF !== null) {
-      cancelAnimationFrame(this.dragRAF);
-      this.dragRAF = null;
-    }
-    
-    // 如果缩放小于等于1，回弹到中心位置（使用弹性动画）
-    if (this.scale <= 1) {
-      this.translateX = 0;
-      this.translateY = 0;
-      this.updateImageTransform(false, true); // 使用弹性过渡
-    } else {
-      // 缩放大于1时，确保位置在合理范围内（修复缩放后位置不正确的问题）
-      this.constrainTranslation();
-      this.updateImageTransform(false, false); // 使用普通过渡
-    }
-    
-    // Clear cached dimensions
-    this.cachedContentDimensions = null;
-    
-    document.removeEventListener("mousemove", this._boundDrag);
-    document.removeEventListener("mouseup", this._boundStopDrag);
-    document.removeEventListener(
-      "touchmove",
-      this._boundTouchDrag as EventListener,
-      false
-    );
-    document.removeEventListener("touchend", this._boundTouchEnd);
-  }
+  // Drag / wheel handling moved to GestureController.
+  // Content bounds calculation moved to `computeContentBounds()` above.
 
   // 全屏切换时切换图标
   private toggleFullscreen() {
@@ -1534,13 +1386,19 @@ export class ViewerPro {
         break;
       case "+":
       case "=":
-        this.zoom(this.zoomStep);
+        this.transformEngine.zoomBy(
+          this.transformEngine.getConfig().step,
+          this.computeContentBounds(),
+        );
         break;
       case "-":
-        this.zoom(-this.zoomStep);
+        this.transformEngine.zoomBy(
+          -this.transformEngine.getConfig().step,
+          this.computeContentBounds(),
+        );
         break;
       case "0":
-        this.resetZoom();
+        this.transformEngine.reset();
         break;
       case "f":
         this.toggleFullscreen();
@@ -1583,34 +1441,13 @@ export class ViewerPro {
     this.infoPanel.setAttribute("aria-hidden", "true");
   }
 
-  private showProgress(percent: number, loaded: number, total: number) {
-    this.progressMask.style.display = "flex";
-    this.progressText.textContent = "加载中";
-    this.progressPercent.textContent = `${Math.round(percent * 100)}%`;
-    this.progressSize.textContent = `${(loaded / 1048576).toFixed(1)}MB / ${(
-      total / 1048576
-    ).toFixed(1)}MB`;
-    // 进度环动画
-    const circle = this.progressMask.querySelector(
-      ".progress-bar"
-    ) as SVGCircleElement;
-    const r = 14,
-      c = 2 * Math.PI * r;
-    circle.style.strokeDasharray = `${c}`;
-    circle.style.strokeDashoffset = `${c * (1 - percent)}`;
-  }
-
-  private hideProgress() {
-    this.progressMask.style.display = "none";
-  }
-
   // 缩略图显示/隐藏切换
   private toggleThumbnails() {
     if (!this.thumbnailNav) return;
-    
+
     // 切换 hidden class 来控制显示/隐藏
     const isHidden = this.thumbnailNav.classList.contains("hidden");
-    
+
     if (isHidden) {
       // 显示缩略图
       this.thumbnailNav.classList.remove("hidden");
@@ -1622,20 +1459,55 @@ export class ViewerPro {
     }
   }
 
+  /**
+   * Live-swap the active render backend to CssBackend. Used as a runtime
+   * fallback when the WebGL backend can no longer be used:
+   *   - `webglcontextlost` (driver crash, GPU reset)
+   *   - texture upload failed (image > MAX_TEXTURE_SIZE)
+   *
+   * Re-registers all current targets on the new backend and applies the
+   * latest transform so the viewer keeps rendering without user-visible glitch.
+   */
+  private swapToCssBackend(): void {
+    if (this.backendKind === "css") return;
+    console.warn("[viewer-pro] swapping render backend: webgl -> css");
+
+    const collected: HTMLElement[] = [];
+    if (this.previewImage) collected.push(this.previewImage);
+    if (this.cachedCustomNode) collected.push(this.cachedCustomNode);
+
+    try {
+      this.renderBackend.destroy();
+    } catch (e) {
+      console.warn("[viewer-pro] previous backend destroy failed:", e);
+    }
+
+    this.renderBackend = new CssBackend();
+    this.backendKind = "css";
+    this.renderBackend.mount?.(this.imageContainer);
+    for (const el of collected) {
+      this.renderBackend.addTarget(el);
+    }
+
+    // Re-emit current engine state through the new backend.
+    this.transformEngine.reconstrain(this.computeContentBounds(), "normal");
+  }
+
+  /** Called by WebGLBackend when the GL context is lost. */
+  private handleWebGLContextLost(): void {
+    this.swapToCssBackend();
+  }
+
   // 新增：清理资源的方法
   public destroy() {
-    // 清理拖拽相关事件
-    this.stopDrag();
-
-    // 清理事件监听器 - 使用绑定的处理器
+    // 1. Detach DOM gestures (mouse / wheel / touch / dblclick + backdrop)
+    if (this.gestureController) {
+      this.gestureController.unbindBackdrop(this.previewContainer);
+      this.gestureController.destroy();
+    }
     document.removeEventListener("keydown", this._boundKeyDown);
-    this.imageContainer.removeEventListener("mousedown", this._boundMouseDown);
-    this.imageContainer.removeEventListener("touchstart", this._boundTouchStart);
-    this.imageContainer.removeEventListener("wheel", this._boundWheel);
-    this.previewContainer.removeEventListener("click", this._boundContainerClick);
-    this.imageContainer.removeEventListener("dblclick", this._boundImageDblClick);
 
-    // 清理资源
+    // 2. Abort in-flight resources
     if (this.activeBlobUrl) {
       try {
         URL.revokeObjectURL(this.activeBlobUrl);
@@ -1644,7 +1516,6 @@ export class ViewerPro {
       }
       this.activeBlobUrl = null;
     }
-
     if (this.activeXHR) {
       try {
         this.activeXHR.abort();
@@ -1653,40 +1524,27 @@ export class ViewerPro {
       }
       this.activeXHR = null;
     }
-    
-    // Cancel any pending RAF
-    if (this.dragRAF !== null) {
-      cancelAnimationFrame(this.dragRAF);
-      this.dragRAF = null;
+    // 3. Reset transform engine + release render backend
+    this.transformEngine.setListener(null);
+    this.transformEngine.resetSilently();
+    if (this.renderBackend) {
+      this.renderBackend.destroy();
     }
-    
-    // 清理滚轮 RAF
-    if (this._wheelRAF !== null) {
-      cancelAnimationFrame(this._wheelRAF);
-      this._wheelRAF = null;
-    }
-    
-    // Clear all caches
-    this.cachedContentDimensions = null;
+
+    // 4. Drop cached references
     this.cachedCustomNode = null;
     this.lastActiveIndex = -1;
 
-    // 从DOM中移除容器
+    // 5. Detach preview DOM
     if (this.previewContainer && this.previewContainer.parentNode) {
       this.previewContainer.parentNode.removeChild(this.previewContainer);
     }
 
-    // 清理回调数组
+    // 6. Reset callback arrays + state
     this.imageLoadCallbacks = [];
     this.imageErrorCallbacks = [];
-
-    // 重置状态
     this.images = [];
     this.currentIndex = 0;
-    this.scale = 1;
-    this.translateX = 0;
-    this.translateY = 0;
-    this.isDragging = false;
     this.isFullscreen = false;
     this.imageLoadToken = 0;
     this.currentImageLoadStatus = { loaded: false };
@@ -1694,19 +1552,19 @@ export class ViewerPro {
   }
 
   // 设置主题
-  public setTheme(theme: 'dark' | 'light' | 'auto') {
+  public setTheme(theme: "dark" | "light" | "auto") {
     this.theme = theme;
     if (this.previewContainer) {
-      this.previewContainer.setAttribute('data-theme', theme);
+      this.previewContainer.setAttribute("data-theme", theme);
     }
   }
 
   // 获取当前主题
-  public getTheme(): 'dark' | 'light' | 'auto' {
+  public getTheme(): "dark" | "light" | "auto" {
     return this.theme;
   }
 
-  // 设置缩放配置
+  // 设置缩放配置 — proxies to TransformEngine.
   public setZoomConfig(config: {
     min?: number;
     max?: number;
@@ -1715,24 +1573,25 @@ export class ViewerPro {
     wheelMaxStep?: number;
     wheelSpeedMultiplier?: number;
   }) {
-    if (config.min !== undefined) this.zoomMin = config.min;
-    if (config.max !== undefined) this.zoomMax = config.max;
-    if (config.step !== undefined) this.zoomStep = config.step;
-    if (config.wheelBaseStep !== undefined) this.zoomWheelBaseStep = config.wheelBaseStep;
-    if (config.wheelMaxStep !== undefined) this.zoomWheelMaxStep = config.wheelMaxStep;
-    if (config.wheelSpeedMultiplier !== undefined) this.zoomWheelSpeedMultiplier = config.wheelSpeedMultiplier;
+    this.transformEngine.setConfig({
+      ...(config.min !== undefined ? { min: config.min } : {}),
+      ...(config.max !== undefined ? { max: config.max } : {}),
+      ...(config.step !== undefined ? { step: config.step } : {}),
+      ...(config.wheelBaseStep !== undefined
+        ? { wheelBaseStep: config.wheelBaseStep }
+        : {}),
+      ...(config.wheelMaxStep !== undefined
+        ? { wheelMaxStep: config.wheelMaxStep }
+        : {}),
+      ...(config.wheelSpeedMultiplier !== undefined
+        ? { wheelSpeedMultiplier: config.wheelSpeedMultiplier }
+        : {}),
+    });
   }
 
-  // 获取缩放配置
+  // 获取缩放配置 — proxies to TransformEngine.
   public getZoomConfig() {
-    return {
-      min: this.zoomMin,
-      max: this.zoomMax,
-      step: this.zoomStep,
-      wheelBaseStep: this.zoomWheelBaseStep,
-      wheelMaxStep: this.zoomWheelMaxStep,
-      wheelSpeedMultiplier: this.zoomWheelSpeedMultiplier,
-    };
+    return this.transformEngine.getConfig();
   }
 }
 
