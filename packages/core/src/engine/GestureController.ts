@@ -30,6 +30,7 @@ export interface GestureBindings {
   onDoubleClick?: (e: MouseEvent) => void;
   /** When the user clicks on the backdrop (container itself). */
   onBackdropClick?: (e: MouseEvent) => void;
+  onSwipe?: (direction: -1 | 1) => void;
 }
 
 export class GestureController {
@@ -41,6 +42,11 @@ export class GestureController {
   private startY = 0;
   private dragRAF: number | null = null;
   private cachedBounds: ContentBounds | null = null;
+  private isTouchSwiping = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private touchCurrentX = 0;
+  private touchCurrentY = 0;
   private isPinching = false;
   private pinchStartDistance = 0;
   private pinchStartScale = 1;
@@ -61,6 +67,11 @@ export class GestureController {
     if (e.touches.length >= 2) {
       e.preventDefault();
       this.startPinch(e);
+      return;
+    }
+    if (e.touches && e.touches[0] && this.shouldUseSwipeNavigation()) {
+      e.preventDefault();
+      this.startTouchSwipe(e.touches[0]);
       return;
     }
     if (e.touches && e.touches[0]) this.startDrag(e.touches[0]);
@@ -103,6 +114,10 @@ export class GestureController {
       return;
     }
     if (!e.touches[0]) return;
+    if (this.isTouchSwiping) {
+      this.onTouchSwipe(e.touches[0]);
+      return;
+    }
     this.onDrag(e.touches[0]);
   };
   private onDocTouchEnd = (e: TouchEvent) => {
@@ -111,6 +126,10 @@ export class GestureController {
       if (e.touches.length === 1) {
         this.startDrag(e.touches[0]);
       }
+      return;
+    }
+    if (this.isTouchSwiping) {
+      this.stopTouchSwipe();
       return;
     }
     this.stopDrag();
@@ -139,6 +158,7 @@ export class GestureController {
 
   public unbind(): void {
     this.stopPinch();
+    this.stopTouchSwipe(false);
     this.stopDrag();
     if (this.wheelRAF !== null) {
       cancelAnimationFrame(this.wheelRAF);
@@ -299,8 +319,54 @@ export class GestureController {
     this.detachDocListeners();
   }
 
+  private startTouchSwipe(touch: Touch): void {
+    if (!this.bindings) return;
+    this.isTouchSwiping = true;
+    this.touchStartX = touch.clientX;
+    this.touchStartY = touch.clientY;
+    this.touchCurrentX = touch.clientX;
+    this.touchCurrentY = touch.clientY;
+    document.body.style.userSelect = "none";
+    document.addEventListener("touchmove", this.onDocTouchMove, {
+      passive: false,
+    });
+    document.addEventListener("touchend", this.onDocTouchEnd);
+    document.addEventListener("touchcancel", this.onDocTouchEnd);
+  }
+
+  private onTouchSwipe(touch: Touch): void {
+    this.touchCurrentX = touch.clientX;
+    this.touchCurrentY = touch.clientY;
+  }
+
+  private stopTouchSwipe(emit = true): void {
+    if (!this.isTouchSwiping) return;
+    this.isTouchSwiping = false;
+    document.body.style.userSelect = "";
+    if (emit && this.bindings?.onSwipe) {
+      const deltaX = this.touchCurrentX - this.touchStartX;
+      const deltaY = this.touchCurrentY - this.touchStartY;
+      const minDistance = Math.min(80, window.innerWidth * 0.18);
+      if (
+        Math.abs(deltaX) >= minDistance &&
+        Math.abs(deltaX) > Math.abs(deltaY) * 1.25
+      ) {
+        this.bindings.onSwipe(deltaX < 0 ? 1 : -1);
+      }
+    }
+    this.detachDocListeners();
+  }
+
   private getTouchDistance(a: Touch, b: Touch): number {
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  private shouldUseSwipeNavigation(): boolean {
+    return (
+      !!this.bindings?.onSwipe &&
+      this.bindings.engine.scale <= 1 &&
+      window.matchMedia("(pointer: coarse)").matches
+    );
   }
 
   private detachDocListeners(): void {

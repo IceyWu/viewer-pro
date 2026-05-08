@@ -218,6 +218,8 @@ export class ViewerPro {
   private transformEngine!: TransformEngine;
   // Gesture binding (mouse / wheel / touch / dblclick / backdrop click)
   private gestureController!: GestureController;
+  private lockedScrollY = 0;
+  private previousBodyStyles: Partial<CSSStyleDeclaration> = {};
 
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
@@ -285,6 +287,7 @@ export class ViewerPro {
       engine: this.transformEngine,
       getBounds: () => this.computeContentBounds(),
       onBackdropClick: () => this.close(),
+      onSwipe: (direction) => this.navigate(direction),
       // dblclick falls back to engine.reset() (original behavior).
     });
     this.gestureController.bindBackdrop(this.previewContainer);
@@ -635,15 +638,47 @@ export class ViewerPro {
     if (!isAlreadyOpen || !isSameImage) {
       this.previewContainer.classList.add("active");
     }
-    document.body.style.overflow = "hidden";
+    this.lockPageScroll();
   }
 
   public close() {
     this.previewContainer.classList.remove("active");
-    document.body.style.overflow = "";
+    this.unlockPageScroll();
     if (this.isFullscreen) {
       this.toggleFullscreen();
     }
+  }
+
+  private lockPageScroll() {
+    if (document.body.style.position === "fixed") return;
+    this.lockedScrollY = window.scrollY || document.documentElement.scrollTop;
+    this.previousBodyStyles = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+      overflow: document.body.style.overflow,
+    };
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${this.lockedScrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+    document.body.style.overflow = "hidden";
+  }
+
+  private unlockPageScroll() {
+    if (document.body.style.position !== "fixed") return;
+    document.body.style.position = this.previousBodyStyles.position || "";
+    document.body.style.top = this.previousBodyStyles.top || "";
+    document.body.style.left = this.previousBodyStyles.left || "";
+    document.body.style.right = this.previousBodyStyles.right || "";
+    document.body.style.width = this.previousBodyStyles.width || "";
+    document.body.style.overflow = this.previousBodyStyles.overflow || "";
+    window.scrollTo(0, this.lockedScrollY);
+    this.lockedScrollY = 0;
+    this.previousBodyStyles = {};
   }
 
   // 检查并触发图片回调（用于处理图片已经加载完成的情况）
@@ -1203,6 +1238,7 @@ export class ViewerPro {
     if (index < 0 || index >= this.images.length) return;
     this.currentIndex = index;
     this.transformEngine.resetSilently();
+    this.previewContainer.classList.remove("is-zoomed");
     this.updateThumbnails();
     this.updatePreview();
   }
@@ -1247,6 +1283,10 @@ export class ViewerPro {
 
   // 将变换状态通过 dataset/CSS 变量/自定义事件/回调抛出
   private syncTransformState() {
+    const { scale, translateX, translateY, rotation } =
+      this.transformEngine.getState();
+    this.previewContainer.classList.toggle("is-zoomed", scale > 1);
+
     // Only sync if there are listeners (callback or event listeners)
     if (
       !this.onTransformChangeCb &&
@@ -1255,8 +1295,6 @@ export class ViewerPro {
       return;
     }
 
-    const { scale, translateX, translateY, rotation } =
-      this.transformEngine.getState();
     const state = {
       scale,
       translateX,
@@ -1452,10 +1490,12 @@ export class ViewerPro {
       // 显示缩略图
       this.thumbnailNav.classList.remove("hidden");
       this.thumbnailNav.classList.add("open");
+      this.previewContainer.classList.remove("thumbs-hidden");
     } else {
       // 隐藏缩略图
       this.thumbnailNav.classList.add("hidden");
       this.thumbnailNav.classList.remove("open");
+      this.previewContainer.classList.add("thumbs-hidden");
     }
   }
 
@@ -1500,6 +1540,7 @@ export class ViewerPro {
 
   // 新增：清理资源的方法
   public destroy() {
+    this.unlockPageScroll();
     // 1. Detach DOM gestures (mouse / wheel / touch / dblclick + backdrop)
     if (this.gestureController) {
       this.gestureController.unbindBackdrop(this.previewContainer);
