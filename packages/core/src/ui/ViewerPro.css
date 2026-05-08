@@ -1072,7 +1072,7 @@
   }
 
   .image-preview-container.thumbs-hidden .info-modal {
-    bottom: calc(70px + env(safe-area-inset-bottom));
+    bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   .info-modal::before {

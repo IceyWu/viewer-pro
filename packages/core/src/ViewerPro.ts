@@ -256,10 +256,6 @@ export class ViewerPro {
     this.gestureController.bindBackdrop(this.previewContainer);
 
     this.bindEvents();
-
-    if (this.images.length > 0) {
-      this.updateThumbnails();
-    }
   }
 
   private initializeContainer() {
@@ -364,7 +360,6 @@ export class ViewerPro {
 
   public addImages(images: ViewerItem[]) {
     this.images = images;
-    this.updateThumbnails();
   }
 
   private updateThumbnails() {
