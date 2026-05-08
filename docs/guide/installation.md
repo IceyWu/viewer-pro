@@ -1,48 +1,31 @@
-# 安装
+﻿# 安装
 
-## 使用包管理器
+## 使用 pnpm
 
-::: code-group
-
-```bash [npm]
-npm install viewer-pro
-```
-
-```bash [pnpm]
+```bash
 pnpm add viewer-pro
 ```
 
-```bash [yarn]
+## 其他包管理器
+
+```bash
+npm install viewer-pro
+```
+
+```bash
 yarn add viewer-pro
 ```
 
-:::
+## CSS
 
-## CDN
+当前构建会把样式内联到包中，通常不需要额外引入 CSS 文件。
 
-你也可以通过 CDN 直接在浏览器中使用：
+## 环境要求
 
-```html
-<!-- 引入 JS (CSS 已内联) -->
-<script src="https://unpkg.com/viewer-pro/dist/ViewerPro.js"></script>
-```
+- Node.js 18+
+- 现代浏览器
 
-## 从源码构建
+## 下一步
 
-如果你想从源码构建 ViewerPro：
-
-```bash
-# 克隆仓库
-git clone https://github.com/iceywu/viewer-pro.git
-
-# 进入目录
-cd viewer-pro
-
-# 安装依赖
-pnpm install
-
-# 构建
-pnpm build
-```
-
-构建产物将输出到 `packages/core/dist` 目录。
+- [快速开始](/guide/getting-started)
+- [配置实验台](/api/options)
