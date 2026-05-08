@@ -9,9 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "viewer-pro": "workspace:*",
     "@iceywu/utils": "^0.0.51",
+    "blurhash": "^2.0.5",
     "live-photo": "^0.0.48",
+    "viewer-pro": "workspace:*",
     "vue": "^3.5.13"
   },
   "devDependencies": {

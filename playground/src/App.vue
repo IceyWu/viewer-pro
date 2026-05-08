@@ -2,6 +2,7 @@
 import { ref, onMounted, nextTick, computed, h, render } from "vue";
 import { ViewerPro, type ViewerItem } from "viewer-pro";
 import { LivePhotoViewer } from "live-photo";
+import { decode } from "blurhash";
 import testData from "./assets/data.json";
 import ImageMetaPanel from "./components/ImageMetaPanel.vue";
 const imagesV2 = computed<ViewerItem[]>(() => {
@@ -19,6 +20,7 @@ const imagesV2 = computed<ViewerItem[]>(() => {
       title: file.name || "",
       thumbnail: `${file.url}?x-oss-process=image/resize,l_800/format,jpg`,
       type: videoSrc ? "live-photo" : file.type,
+      blurhash: file.blurhash,
     };
     if (imgObj.type === "live-photo") {
       imgObj.photoSrc = file.url;
@@ -28,33 +30,6 @@ const imagesV2 = computed<ViewerItem[]>(() => {
   });
 });
 const previewImages = computed<ViewerItem[]>(() => imagesV2.value.slice(0, 3));
-// console.log('🌳-----imagesV2-----', imagesV2.value);
-
-// 示例图片数据
-const images: ViewerItem[] = [
-  {
-    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG",
-    thumbnail: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG?x-oss-process=image/resize,l_800/format,jpg",
-    photoSrc:
-      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483139550.JPEG",
-    videoSrc:
-      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483140652.MOV",
-    title: "IMG_3846.JPEG",
-    type: "live-photo",
-  },
-  {
-    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483141159.JPEG",
-    thumbnail:
-      "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483141159.JPEG?x-oss-process=image/resize,l_800/format,jpg",
-    title: "IMG_3856.JPEG",
-  },
-  {
-    src: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483142243.JPEG",
-    thumbnail: "https://lpalette.oss-accelerate.aliyuncs.com/nestTest/1/1761483142243.JPEG?x-oss-process=image/resize,l_800/format,jpg",
-    title: "IMG_3850.JPEG",
-  },
-  
-];
 
 const viewer = ref<ViewerPro | null>(null);
 const currentTheme = ref<'dark' | 'light' | 'auto'>('dark');
@@ -71,170 +46,146 @@ const setTheme = (theme: 'dark' | 'light' | 'auto') => {
   }
 };
 
-const init = async () => {
-  // 1. 自定义 loading：高度自定义控制
-  const customLoading = (imgObj: ViewerItem, idx: number) => {
-    const wrap = document.createElement("div");
-    wrap.style.display = "flex";
-    wrap.style.flexDirection = "column";
-    wrap.style.alignItems = "center";
-    wrap.style.gap = "10px";
-    wrap.style.color = "#fff";
-    const palette = ["#60A5FA", "#34D399", "#F59E0B", "#EF4444", "#A78BFA"];
-    const color = palette[idx % palette.length];
+const createBlurhashCanvas = (hash?: string): HTMLCanvasElement | null => {
+  if (!hash) return null;
 
-    if (imgObj.type === "live-photo") {
-      wrap.innerHTML = `
-        <svg width="40" height="40" viewBox="0 0 50 50">
-          <circle cx="25" cy="25" r="20" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
-            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.8s" repeatCount="indefinite"/>
-          </circle>
-        </svg>
-        <span id="loading-text-${idx}">Live Photo 加载中…（第 ${idx + 1} 张）</span>
-        <div style="font-size:12px;opacity:0.8;" id="loading-status-${idx}">准备加载图片和视频...</div>
-      `;
-      
-      // 返回高度自定义的控制器
-      return {
-        node: wrap,
-        done: async (context: any) => {
-          // 等待 DOM 添加完成
-          await new Promise(resolve => setTimeout(resolve, 10));
-          
-          const statusEl = document.getElementById(`loading-status-${idx}`);
-          if (statusEl) statusEl.textContent = "检查图片加载状态...";
-          
-          // 监听图片加载完成
-          let imageLoaded = false;
-          let mediaReady = false;
-          
-          context.onImageLoaded(() => {
-            imageLoaded = true;
-            if (statusEl) statusEl.textContent = "图片加载完成，检查Live Photo媒体...";
-            checkAllReady();
-          });
-          
-          context.onImageError((error: string) => {
-            if (statusEl) statusEl.textContent = `加载失败: ${error}`;
-            // 即使失败也要关闭loading
-            setTimeout(() => context.closeLoading(), 2000);
-          });
-          
-          // 模拟检查Live Photo媒体加载状态
-          const checkMediaStatus = async () => {
-            try {
-              const mediaStatus = await context.getMediaLoadingStatus();
-              const allImagesLoaded = mediaStatus.images.every((loaded: boolean) => loaded);
-              const allVideosLoaded = mediaStatus.videos.every((loaded: boolean) => loaded);
-              
-              if (allImagesLoaded && allVideosLoaded) {
-                mediaReady = true;
-                if (statusEl) statusEl.textContent = "Live Photo 媒体加载完成！";
-                checkAllReady();
-              } else {
-                if (statusEl) {
-                  statusEl.textContent = `媒体加载中... 图片:${mediaStatus.images.filter(Boolean).length}/${mediaStatus.images.length} 视频:${mediaStatus.videos.filter(Boolean).length}/${mediaStatus.videos.length}`;
-                }
-                // 继续检查
-                setTimeout(checkMediaStatus, 200);
-              }
-            } catch (e) {
-              // 失败时也认为准备就绪
-              mediaReady = true;
-              checkAllReady();
-            }
-          };
-          
-          const checkAllReady = () => {
-            if (imageLoaded && mediaReady) {
-              if (statusEl) statusEl.textContent = "加载完成！";
-              setTimeout(() => {
-                context.closeLoading();
-              }, 500);
-            }
-          };
-          
-          // 开始检查媒体状态
-          setTimeout(checkMediaStatus, 100);
-        }
-      };
-    } else {
-      wrap.innerHTML = `
-        <svg width="36" height="36" viewBox="0 0 50 50">
-          <circle cx="25" cy="25" r="20" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
-            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
-          </circle>
-        </svg>
-        <span id="loading-text-${idx}">${imgObj.title || "图片"} 加载中…（第 ${idx + 1} 张）</span>
-        <div style="font-size:12px;opacity:0.8;" id="loading-status-${idx}">准备加载图片...</div>
-      `;
-      
-      // 对于普通图片，等待图片加载完成
-      return {
-        node: wrap,
-        done: async (context: any) => {
-          // 等待 DOM 添加完成
-          await new Promise(resolve => setTimeout(resolve, 10));
-          
-          const statusEl = document.getElementById(`loading-status-${idx}`);
-          
-          // 可以在这里添加自定义的异步操作，比如调用接口
-          if (statusEl) statusEl.textContent = "调用API检查权限...";
-          
-          try {
-            // 模拟API调用
-            await new Promise(resolve => setTimeout(resolve, 500));
-            if (statusEl) statusEl.textContent = "权限检查完成，等待图片加载...";
-            
-            // 监听图片加载
-            context.onImageLoaded(() => {
-              if (statusEl) statusEl.textContent = "图片加载完成！";
-              setTimeout(() => {
-                context.closeLoading();
-              }, 300);
-            });
-            
-            context.onImageError((error: string) => {
-              if (statusEl) statusEl.textContent = `加载失败: ${error}`;
-              setTimeout(() => context.closeLoading(), 2000);
-            });
-            
-          } catch (error) {
-            if (statusEl) statusEl.textContent = "API调用失败，继续加载图片...";
-            // 即使API失败，也继续等待图片加载
-            context.onImageLoaded(() => {
-              context.closeLoading();
-            });
-          }
-        }
-      };
+  const width = 32;
+  const height = 32;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.objectFit = "cover";
+  canvas.style.transition = "opacity 240ms ease";
+
+  try {
+    const pixels = decode(hash, width, height);
+    const imageData = ctx.createImageData(width, height);
+    imageData.data.set(pixels);
+    ctx.putImageData(imageData, 0, 0);
+  } catch {
+    return null;
+  }
+
+  return canvas;
+};
+
+const applyImageFrameSize = (frame: HTMLElement, imgObj: ViewerItem) => {
+  const width = Number(imgObj.width);
+  const height = Number(imgObj.height);
+  const ratio = width > 0 && height > 0 ? width / height : 1;
+
+  const setSize = () => {
+    const parent = frame.parentElement;
+    if (!parent) return;
+
+    const maxWidth = parent.clientWidth * 0.9;
+    const maxHeight = parent.clientHeight * 0.9;
+    let frameWidth = maxWidth;
+    let frameHeight = frameWidth / ratio;
+
+    if (frameHeight > maxHeight) {
+      frameHeight = maxHeight;
+      frameWidth = frameHeight * ratio;
     }
+
+    frame.style.width = `${frameWidth}px`;
+    frame.style.height = `${frameHeight}px`;
   };
 
-  // 2. 自定义渲染节点
+  requestAnimationFrame(setSize);
+};
+
+const waitForElementSize = (el: HTMLElement): Promise<DOMRect> =>
+  new Promise((resolve) => {
+    const check = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        resolve(rect);
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+
+    check();
+  });
+
+const init = async () => {
   const customRender = (imgObj: ViewerItem, idx: number) => {
-
-
     const box = document.createElement("div");
     box.id = `custom-render-${idx}`;
     box.style.display = "flex";
-    box.style.flexDirection = "column";
     box.style.alignItems = "center";
     box.style.justifyContent = "center";
     box.style.height = "100%";
     box.style.transformOrigin = "center center";
     box.style.willChange = "transform";
+    const contentLayer = document.createElement("div");
+    contentLayer.id = `custom-render-content-${idx}`;
+    contentLayer.style.position = "relative";
+    contentLayer.style.zIndex = "1";
+    contentLayer.style.display = "flex";
+    contentLayer.style.alignItems = "center";
+    contentLayer.style.justifyContent = "center";
+    contentLayer.style.width = "100%";
+    contentLayer.style.height = "100%";
+    contentLayer.style.transformOrigin = "center center";
+    contentLayer.style.willChange = "transform";
+    const createImageFrame = () => {
+      const imageFrame = document.createElement("div");
+      imageFrame.style.position = "relative";
+      imageFrame.style.flex = "0 0 auto";
+      const placeholder = createBlurhashCanvas(imgObj.blurhash);
+      if (placeholder) {
+        imageFrame.appendChild(placeholder);
+      }
+      applyImageFrameSize(imageFrame, imgObj);
+      return { imageFrame, placeholder };
+    };
     if (imgObj.type === "live-photo") {
-      box.innerHTML = `
-        <div id="live-photo-container-${idx}"></div>
-         `;
+      const { imageFrame, placeholder } = createImageFrame();
+      const livePhotoContainer = document.createElement("div");
+      livePhotoContainer.id = `live-photo-container-${idx}`;
+      livePhotoContainer.style.position = "absolute";
+      livePhotoContainer.style.inset = "0";
+      livePhotoContainer.style.width = "100%";
+      livePhotoContainer.style.height = "100%";
+      livePhotoContainer.style.zIndex = "1";
+      livePhotoContainer.dataset.placeholderId = `blurhash-placeholder-${idx}`;
+      if (placeholder) {
+        placeholder.id = `blurhash-placeholder-${idx}`;
+      }
+      imageFrame.appendChild(livePhotoContainer);
+      contentLayer.appendChild(imageFrame);
     } else {
-      box.innerHTML = `
-          <img src="${
-            imgObj.src
-          }" style="max-width:90%;max-height:90%;">
-        `;
+      const { imageFrame, placeholder } = createImageFrame();
+      const image = document.createElement("img");
+      image.src = imgObj.src;
+      image.alt = imgObj.title || "";
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "contain";
+      image.style.position = "absolute";
+      image.style.inset = "0";
+      image.style.zIndex = "1";
+      image.style.opacity = placeholder ? "0" : "1";
+      image.style.transition = "opacity 240ms ease";
+      image.addEventListener("load", () => {
+        image.style.opacity = "1";
+        if (placeholder) {
+          placeholder.remove();
+        }
+      });
+      imageFrame.appendChild(image);
+      contentLayer.appendChild(imageFrame);
     }
+    box.appendChild(contentLayer);
 
     return box;
   };
@@ -268,14 +219,11 @@ const init = async () => {
 
   await nextTick();
   viewer.value = new ViewerPro({
-    // 使用按图片/索引的动态 loading
-    // loadingNode: customLoading,
     renderNode: customRender,
     infoRender,
-    onImageLoad: (imgObj: ViewerItem, idx: number) => {
+    onImageLoad: async (imgObj: ViewerItem, idx: number) => {
 
       if (imgObj.type !== "live-photo") {
-        // 对于普通图片，loading 已经由 customLoading 控制
         return;
       }
       
@@ -286,19 +234,24 @@ const init = async () => {
       };
       const container = document.getElementById(`live-photo-container-${idx}`);
       if (!container) return;
-      
+      const placeholderId = container.dataset.placeholderId;
+      const removePlaceholder = () => {
+        if (!placeholderId) return;
+        document.getElementById(placeholderId)?.remove();
+      };
+      const rect = await waitForElementSize(container);
+      const { width, height } = rect;
       // 创建 LivePhotoViewer 实例
       new LivePhotoViewer({
         photoSrc: demoSource.photoSrc,
         videoSrc: demoSource.videoSrc,
         container: container,
-        width: 300,
-        height: 300,
+        width,
+        height,
         // autoplay: false,
         imageCustomization: {
           styles: {
             objectFit: "cover",
-            borderRadius: "8px",
           },
           attributes: {
             alt: "Live Photo Demo",
@@ -306,16 +259,34 @@ const init = async () => {
           },
         },
       });
-      // 注意：loading 的关闭已经由 customLoading 中的逻辑处理
+      requestAnimationFrame(() => {
+        const image = container.querySelector("img");
+        if (!image) return;
+        if (image.complete) {
+          removePlaceholder();
+          return;
+        }
+        image.addEventListener("load", removePlaceholder, { once: true });
+      });
     },
     onTransformChange: ({ scale, translateX, translateY, rotation, index }) => {
-      // 让自定义 render 的根节点跟随缩放/位移/旋转
-      const el = document.getElementById(
+      const wrapper = document.getElementById(
         `custom-render-${index}`
+      ) as HTMLElement | null;
+      if (wrapper) {
+        wrapper.style.transform = "none";
+        wrapper.style.transition = "none";
+      }
+      const el = document.getElementById(
+        `custom-render-content-${index}`
       ) as HTMLElement | null;
       if (!el) return;
       // 使用 rAF 保持流畅
       requestAnimationFrame(() => {
+        if (wrapper) {
+          wrapper.style.transform = "none";
+          wrapper.style.transition = "none";
+        }
         el.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${rotation}deg)`;
       });
       // 同步右侧信息面板中的缩放显示
@@ -323,7 +294,6 @@ const init = async () => {
       if (scaleEl) scaleEl.textContent = `${Math.round(scale * 100)}%`;
     },
   });
-  // viewer.value.addImages(images);
   viewer.value.addImages(imagesV2.value);
   viewer.value.init();
   

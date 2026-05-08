@@ -58,6 +58,9 @@ importers:
       '@iceywu/utils':
         specifier: ^0.0.51
         version: 0.0.51
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       live-photo:
         specifier: ^0.0.48
         version: 0.0.48
@@ -960,6 +963,9 @@ packages:
 
   birpc@2.6.1:
     resolution: {integrity: sha512-LPnFhlDpdSH6FJhJyn4M0kFO7vtQ5iPw24FnG0y21q09xC7e8+1LeR31S1MAIrDAHp4m7aas4bEkTDTvMAtebQ==}
+
+  blurhash@2.0.5:
+    resolution: {integrity: sha512-cRygWd7kGBQO3VEhPiTgq4Wc43ctsM+o46urrmPOiuAe+07fzlSB9OJVdpgDL0jPqXUVQ9ht7aq7kxOeJHRK+w==}
 
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
@@ -2880,6 +2886,8 @@ snapshots:
       is-windows: 1.0.2
 
   birpc@2.6.1: {}
+
+  blurhash@2.0.5: {}
 
   boolbase@1.0.0: {}
 
