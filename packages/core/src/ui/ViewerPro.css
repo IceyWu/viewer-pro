@@ -713,33 +713,6 @@
       0 0 0 1px rgba(255, 255, 255, 0.25);
   }
 
-  .arrow-btn {
-    position: fixed;
-    width: 38px;
-    height: 38px;
-    top: calc(50dvh - 74px);
-    bottom: auto;
-    transform: translateY(-50%);
-    z-index: 43;
-  }
-
-  .left-arrow {
-    left: 14px;
-  }
-
-  .right-arrow {
-    left: auto;
-    right: 14px;
-  }
-
-  .arrow-btn:hover {
-    transform: translateY(-50%);
-  }
-
-  .arrow-btn:active {
-    transform: translateY(-50%) scale(0.95);
-  }
-
   .image-preview-controls {
     padding: 1rem;
   }
@@ -748,144 +721,6 @@
     height: 2.25rem;
   }
 
-  /* 信息面板改为底部抽屉 */
-  .image-info-panel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: auto;
-    width: 100vw;
-    max-width: 100vw;
-    border-radius: 14px 14px 0 0;
-    box-shadow: 0 -2px 16px 0 rgba(0, 0, 0, 0.18);
-    padding: 1rem 1rem 1.25rem 1rem;
-    max-height: 60vh;
-    background: rgba(30, 40, 60, 0.96);
-    transform: translateY(100%);
-    transition: transform 0.35s cubic-bezier(0.4, 2, 0.6, 1);
-  }
-  .image-info-panel.expanded {
-    transform: translateY(0);
-  }
-  .image-info-panel.collapsed {
-    transform: translateY(100%);
-  }
-  .image-info-panel .info-panel-content {
-    opacity: 1;
-  }
-
-  /* 抽屉拖柄按钮：位于抽屉上边缘居中 */
-  .info-collapse-btn {
-    top: -16px;
-    left: 50%;
-    right: auto;
-    transform: translate(-50%, 0);
-    width: 64px;
-    height: 28px;
-    border-radius: 14px;
-    font-size: 1rem;
-    background: rgba(30, 40, 60, 0.95);
-  }
-  .image-info-panel.collapsed .info-collapse-btn {
-    top: -16px;
-    left: 50%;
-    right: auto;
-    transform: translate(-50%, 0);
-    width: 64px;
-    height: 28px;
-    border-radius: 14px;
-  }
-
-  /* 右下角工具条改为底部居中胶囊工具条 */
-  .corner-tools {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    bottom: 12px;
-    background: rgba(30, 40, 60, 0.65);
-    padding: 6px 10px;
-    border-radius: 999px;
-    gap: 6px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-  }
-  .corner-tools .control-button {
-    width: 40px;
-    height: 40px;
-    background: transparent;
-  }
-}
-.image-info-panel {
-  width: 340px;
-  min-width: 220px;
-  max-width: 400px;
-  background: rgba(30, 40, 60, 0.85);
-  color: #fff;
-  border-radius: 0 0 0 16px;
-  margin: 0;
-  padding: 2.5rem 2rem 2.5rem 2rem;
-  box-sizing: border-box;
-  overflow-y: auto;
-  font-size: 1rem;
-  max-height: 100vh;
-  align-self: stretch;
-  box-shadow: -2px 0 16px 0 rgba(0, 0, 0, 0.12);
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  transition:
-    width 0.35s cubic-bezier(0.4, 2, 0.6, 1),
-    padding 0.35s cubic-bezier(0.4, 2, 0.6, 1),
-    background 0.25s,
-    box-shadow 0.25s;
-}
-.image-info-panel .info-panel-content {
-  opacity: 1;
-  transition: opacity 0.25s cubic-bezier(0.4, 2, 0.6, 1);
-  pointer-events: auto;
-}
-.image-info-panel.collapsed {
-  width: 32px;
-  min-width: 0;
-  max-width: 32px;
-  padding: 0;
-  background: rgba(30, 40, 60, 0.7);
-  box-shadow: -2px 0 12px 0 rgba(0, 0, 0, 0.1);
-}
-.image-info-panel.collapsed .info-panel-content {
-  opacity: 0;
-  pointer-events: none;
-}
-.info-collapse-btn {
-  position: absolute;
-  top: 50%;
-  right: -18px;
-  transform: translateY(-50%);
-  width: 38px;
-  height: 56px;
-  background: rgba(30, 40, 60, 0.95);
-  color: #fff;
-  border-radius: 0 16px 16px 0;
-  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 1.5rem;
-  z-index: 22;
-  border: none;
-  outline: none;
-  transition:
-    background 0.2s,
-    right 0.35s cubic-bezier(0.4, 2, 0.6, 1);
-}
-.info-collapse-btn:hover {
-  background: #2a3a5a;
-}
-.image-info-panel.collapsed .info-collapse-btn {
-  right: -18px;
-  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
 }
 .info-title {
   font-size: 1.2rem;
@@ -955,41 +790,6 @@
 }
 .right-arrow {
   left: calc(50% + 10px);
-}
-.corner-tools {
-  position: absolute;
-  right: 32px;
-  bottom: 32px;
-  display: flex;
-  flex-direction: row;
-  gap: 0.5rem;
-  z-index: 22;
-  background: none;
-}
-.corner-tools .control-button {
-  background: rgba(30, 40, 60, 0.65);
-  border-radius: 50%;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 1.3rem;
-  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.12);
-  border: none;
-  margin: 0;
-  padding: 0;
-  transition: background 0.2s;
-}
-.corner-tools .control-button:hover {
-  background: rgba(30, 40, 60, 0.85);
-}
-.corner-tools .image-preview-counter {
-  color: #fff;
-  font-size: 1rem;
-  margin: 0 0 0 0.5rem;
-  align-self: center;
 }
 .image-preview-controls {
   display: none !important;
@@ -1186,11 +986,32 @@
     pointer-events: none;
   }
 
-  #sideZoomIn,
-  #sideZoomOut,
-  #sideResetZoom,
-  #sideDownload,
-  #sideFullscreen {
+  .side-toolbar .control-button {
+    display: none;
+  }
+
+  .image-preview-container[data-mobile-toolbar~="zoomIn"]
+    [data-vp-role="sideZoomIn"],
+  .image-preview-container[data-mobile-toolbar~="zoomOut"]
+    [data-vp-role="sideZoomOut"],
+  .image-preview-container[data-mobile-toolbar~="reset"]
+    [data-vp-role="sideResetZoom"],
+  .image-preview-container[data-mobile-toolbar~="rotateLeft"]
+    [data-vp-role="sideRotateLeft"],
+  .image-preview-container[data-mobile-toolbar~="rotateRight"]
+    [data-vp-role="sideRotateRight"],
+  .image-preview-container[data-mobile-toolbar~="thumbnails"]
+    [data-vp-role="sideToggleThumbnails"],
+  .image-preview-container[data-mobile-toolbar~="fullscreen"]
+    [data-vp-role="sideFullscreen"],
+  .image-preview-container[data-mobile-toolbar~="download"]
+    [data-vp-role="sideDownload"],
+  .image-preview-container[data-mobile-toolbar~="info"]
+    [data-vp-role="sideInfoOpen"] {
+    display: flex;
+  }
+
+  .side-toolbar-sep {
     display: none;
   }
 
@@ -1218,6 +1039,12 @@
 
   .image-preview-container.thumbs-hidden .side-toolbar {
     bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .image-preview-container.info-open .side-toolbar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(8px);
   }
 
   .info-modal {

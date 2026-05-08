@@ -24,7 +24,7 @@ export default {
     },
   ],
   plugins: [
-    typescript({ tsconfig: './tsconfig.json' }),
+    typescript({ tsconfig: './tsconfig.json', outputToFilesystem: true }),
     postcss(),
   ],
 };

@@ -15,6 +15,10 @@
 
 import type { ContentBounds, TransformEngine } from "./TransformEngine";
 
+const DEFAULT_SWIPE_MAX_DISTANCE = 80;
+const DEFAULT_SWIPE_VIEWPORT_RATIO = 0.18;
+const DEFAULT_SWIPE_AXIS_LOCK_RATIO = 1.25;
+
 export interface GestureBindings {
   /** Container that captures pointer/wheel events. */
   container: HTMLElement;
@@ -31,6 +35,12 @@ export interface GestureBindings {
   /** When the user clicks on the backdrop (container itself). */
   onBackdropClick?: (e: MouseEvent) => void;
   onSwipe?: (direction: -1 | 1) => void;
+  swipeEnabled?: boolean;
+  swipeConfig?: {
+    maxDistance?: number;
+    viewportRatio?: number;
+    axisLockRatio?: number;
+  };
 }
 
 export class GestureController {
@@ -184,7 +194,7 @@ export class GestureController {
   private shouldStartDrag(target: HTMLElement): boolean {
     if (target.closest(".arrow-btn, .info-modal, .side-toolbar")) return false;
     return !!target.closest(
-      "#previewImage, .custom-render-node, #imageContainer",
+      '[data-vp-role="previewImage"], .custom-render-node, [data-vp-role="imageContainer"]',
     );
   }
 
@@ -346,10 +356,17 @@ export class GestureController {
     if (emit && this.bindings?.onSwipe) {
       const deltaX = this.touchCurrentX - this.touchStartX;
       const deltaY = this.touchCurrentY - this.touchStartY;
-      const minDistance = Math.min(80, window.innerWidth * 0.18);
+      const cfg = this.bindings.swipeConfig;
+      const minDistance = Math.min(
+        cfg?.maxDistance ?? DEFAULT_SWIPE_MAX_DISTANCE,
+        window.innerWidth *
+          (cfg?.viewportRatio ?? DEFAULT_SWIPE_VIEWPORT_RATIO),
+      );
       if (
         Math.abs(deltaX) >= minDistance &&
-        Math.abs(deltaX) > Math.abs(deltaY) * 1.25
+        Math.abs(deltaX) >
+          Math.abs(deltaY) *
+            (cfg?.axisLockRatio ?? DEFAULT_SWIPE_AXIS_LOCK_RATIO)
       ) {
         this.bindings.onSwipe(deltaX < 0 ? 1 : -1);
       }
@@ -364,6 +381,7 @@ export class GestureController {
   private shouldUseSwipeNavigation(): boolean {
     return (
       !!this.bindings?.onSwipe &&
+      this.bindings.swipeEnabled !== false &&
       this.bindings.engine.scale <= 1 &&
       window.matchMedia("(pointer: coarse)").matches
     );

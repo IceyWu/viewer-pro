@@ -20,6 +20,7 @@
  */
 
 import type { TransformState, TransitionMode } from "../backends/RenderBackend";
+import { DEFAULT_ZOOM_CONFIG } from "../config/defaults";
 
 export interface TransformConfig {
   /** Minimum allowed scale (default 0.5) */
@@ -36,14 +37,7 @@ export interface TransformConfig {
   wheelSpeedMultiplier: number;
 }
 
-export const DEFAULT_TRANSFORM_CONFIG: TransformConfig = {
-  min: 0.5,
-  max: 3,
-  step: 0.2,
-  wheelBaseStep: 0.15,
-  wheelMaxStep: 0.3,
-  wheelSpeedMultiplier: 0.01,
-};
+export const DEFAULT_TRANSFORM_CONFIG: TransformConfig = DEFAULT_ZOOM_CONFIG;
 
 /** Container + content dimensions used to compute pan constraints. */
 export interface ContentBounds {
@@ -124,11 +118,11 @@ export class TransformEngine {
   public zoomBy(
     delta: number,
     bounds: ContentBounds | null,
-    transition: TransitionMode = "normal"
+    transition: TransitionMode = "normal",
   ): void {
     const newScale = Math.max(
       this.cfg.min,
-      Math.min(this.cfg.max, this._scale + delta)
+      Math.min(this.cfg.max, this._scale + delta),
     );
     if (newScale === this._scale) return;
     this._scale = newScale;
@@ -171,7 +165,7 @@ export class TransformEngine {
       constrain?: boolean;
       snapBackToOrigin?: boolean;
       transition?: TransitionMode;
-    } = {}
+    } = {},
   ): void {
     const transition = options.transition ?? "none";
     if (this._scale <= 1 && options.snapBackToOrigin) {
@@ -194,7 +188,7 @@ export class TransformEngine {
    */
   public reconstrain(
     bounds: ContentBounds | null,
-    transition: TransitionMode = "normal"
+    transition: TransitionMode = "normal",
   ): void {
     if (this._scale > 1 && bounds) {
       this.applyConstraint(bounds);
@@ -226,7 +220,7 @@ export class TransformEngine {
     const absDelta = Math.abs(normalizedDelta);
     const speedBonus = Math.min(
       absDelta * this.cfg.wheelSpeedMultiplier,
-      this.cfg.wheelMaxStep - this.cfg.wheelBaseStep
+      this.cfg.wheelMaxStep - this.cfg.wheelBaseStep,
     );
     return this.cfg.wheelBaseStep + speedBonus;
   }
@@ -249,19 +243,19 @@ export class TransformEngine {
     const scaledHeight = bounds.contentHeight * this._scale;
     const maxTranslateX = Math.max(
       0,
-      (scaledWidth - bounds.containerWidth) / 2
+      (scaledWidth - bounds.containerWidth) / 2,
     );
     const maxTranslateY = Math.max(
       0,
-      (scaledHeight - bounds.containerHeight) / 2
+      (scaledHeight - bounds.containerHeight) / 2,
     );
     this._translateX = Math.max(
       -maxTranslateX,
-      Math.min(maxTranslateX, this._translateX)
+      Math.min(maxTranslateX, this._translateX),
     );
     this._translateY = Math.max(
       -maxTranslateY,
-      Math.min(maxTranslateY, this._translateY)
+      Math.min(maxTranslateY, this._translateY),
     );
   }
 

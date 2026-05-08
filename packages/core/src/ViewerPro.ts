@@ -1,18 +1,4 @@
-import {
-  closeIcon,
-  prevIcon,
-  nextIcon,
-  zoomInIcon,
-  zoomOutIcon,
-  resetZoomIcon,
-  fullscreenIcon,
-  fullscreenExitIcon,
-  downloadIcon,
-  infoIcon,
-  gridIcon,
-  rotateLeftIcon,
-  rotateRightIcon,
-} from "./icons";
+import { fullscreenIcon, fullscreenExitIcon } from "./ui/icons";
 import type { RenderBackend } from "./backends/RenderBackend";
 import { CssBackend } from "./backends/CssBackend";
 import {
@@ -21,109 +7,33 @@ import {
   type ResolvedBackendKind,
 } from "./backends/BackendRouter";
 import { TransformEngine } from "./engine/TransformEngine";
-import type { ContentBounds } from "./engine/TransformEngine";
+import type { ContentBounds, TransformConfig } from "./engine/TransformEngine";
 import { GestureController } from "./engine/GestureController";
 import { decodeBlob } from "./engine/ImageDecoder";
-
-// Constants for better maintainability
-const ZOOM_STEP = 0.2;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
-const ZOOM_WHEEL_BASE_STEP = 0.15; // 基础步长（增加 50%）
-const ZOOM_WHEEL_MAX_STEP = 0.3; // 最大步长
-const ZOOM_WHEEL_SPEED_MULTIPLIER = 0.01; // 速度乘数
-
-// 预览项接口
-export interface ViewerItem {
-  src: string;
-  thumbnail?: string;
-  title?: string;
-  type?: string;
-  photoSrc?: string;
-  videoSrc?: string;
-  [key: string]: any;
-}
-
-// 加载状态信息接口
-export interface LoadingContext {
-  // 获取当前图片加载状态
-  getImageLoadingStatus: () => Promise<{ loaded: boolean; error?: string }>;
-  // 获取自定义渲染节点中的媒体元素加载状态
-  getMediaLoadingStatus: () => Promise<{
-    images: boolean[];
-    videos: boolean[];
-    audios: boolean[];
-  }>;
-  // 监听图片加载完成
-  onImageLoaded: (callback: () => void) => void;
-  // 监听图片加载失败
-  onImageError: (callback: (error: string) => void) => void;
-  // 获取当前预览项对象和索引
-  getCurrentImage: () => { image: ViewerItem; index: number };
-  // 手动触发关闭 loading
-  closeLoading: () => void;
-}
-
-export interface ViewerProOptions {
-  // 支持：固定节点 | 无参工厂 | 按图片/索引生成的工厂 | 返回 { node, done }
-  // 新增：done 函数可以接收 LoadingContext 参数，用于高度自定义控制
-  loadingNode?:
-    | HTMLElement
-    | (() => HTMLElement)
-    | ((
-        item: ViewerItem,
-        idx: number,
-      ) =>
-        | HTMLElement
-        | {
-            node: HTMLElement;
-            done: (context: LoadingContext) => void | Promise<void>;
-          });
-  images?: ViewerItem[];
-  renderNode?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
-  onImageLoad?: (item: ViewerItem, idx: number) => void;
-  // 当所有内容（包括自定义渲染内容）都准备就绪后调用
-  onContentReady?: (item: ViewerItem, idx: number) => void;
-  // 当缩放/位移/索引变化时回调（含 renderNode 模式）
-  onTransformChange?: (state: {
-    scale: number;
-    translateX: number;
-    translateY: number;
-    rotation: number;
-    index: number;
-    image: ViewerItem | null;
-  }) => void;
-  // 自定义右侧信息面板渲染
-  infoRender?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
-  // 主题设置: 'dark' | 'light' | 'auto'
-  theme?: "dark" | "light" | "auto";
-  // 缩放配置
-  zoomConfig?: {
-    min?: number; // 最小缩放比例，默认 0.5
-    max?: number; // 最大缩放比例，默认 3
-    step?: number; // 按钮缩放步长，默认 0.2
-    wheelBaseStep?: number; // 滚轮基础步长，默认 0.15
-    wheelMaxStep?: number; // 滚轮最大步长，默认 0.3
-    wheelSpeedMultiplier?: number; // 滚轮速度乘数，默认 0.01
-  };
-  /**
-   * Render backend selection.
-   * - "auto"  (default): WebGL when available and no customRenderNode;
-   *                      otherwise CSS.
-   * - "css":   force the original CSS-transform pipeline. Required for
-   *            video / Live Photo / arbitrary DOM in customRenderNode.
-   * - "webgl": force the WebGL pipeline. Falls back to CSS only when WebGL
-   *            is entirely unavailable.
-   */
-  backend?: BackendChoice;
-  /**
-   * "linear" (default) for photographic content; "nearest" for pixel art.
-   * Only applies when the WebGL backend is active.
-   */
-  webglFiltering?: "linear" | "nearest";
-}
+import {
+  DEFAULT_MOBILE_TOOLBAR,
+  DEFAULT_PRELOAD_CACHE_LIMIT,
+  DEFAULT_ZOOM_CONFIG,
+} from "./config/defaults";
+import type {
+  LoadingContext,
+  TransformChangeState,
+  ToolbarAction,
+  ViewerItem,
+  ViewerProOptions,
+  ZoomConfig,
+} from "./types";
+import { collectViewerElements } from "./ui/elements";
+import { ThumbnailController } from "./controllers/ThumbnailController";
+import { KeyboardController } from "./controllers/KeyboardController";
+import { ImagePreloader } from "./utils/ImagePreloader";
+import { ScrollLock } from "./utils/ScrollLock";
+import { getViewerTemplate } from "./ui/template";
 
 export class ViewerPro {
+  private static nextInstanceId = 0;
+
+  private readonly instanceId = ViewerPro.nextInstanceId++;
   private previewContainer!: HTMLElement;
   private previewImage!: HTMLImageElement;
   private previewTitle!: HTMLElement;
@@ -191,7 +101,6 @@ export class ViewerPro {
 
   private images: ViewerItem[] = [];
   private currentIndex = 0;
-  private lastActiveIndex = -1; // Track last active thumbnail for optimization
   private isFullscreen = false;
   private theme: "dark" | "light" | "auto" = "dark";
   private imageLoadToken: number = 0;
@@ -206,9 +115,6 @@ export class ViewerPro {
   // Cached custom render node (also a render-backend target)
   private cachedCustomNode: HTMLElement | null = null;
 
-  // Keyboard handler kept on this instance so we can detach in destroy.
-  private _boundKeyDown!: (e: KeyboardEvent) => void;
-
   // Render backend (CssBackend or WebGLBackend, chosen by BackendRouter).
   private renderBackend!: RenderBackend;
   private backendKind: ResolvedBackendKind = "css";
@@ -218,8 +124,25 @@ export class ViewerPro {
   private transformEngine!: TransformEngine;
   // Gesture binding (mouse / wheel / touch / dblclick / backdrop click)
   private gestureController!: GestureController;
-  private lockedScrollY = 0;
-  private previousBodyStyles: Partial<CSSStyleDeclaration> = {};
+  private thumbnailController!: ThumbnailController;
+  private keyboardController!: KeyboardController;
+  private scrollLock = new ScrollLock();
+  private mobileToolbar: ToolbarAction[] = DEFAULT_MOBILE_TOOLBAR;
+  private mobileSwipeToNavigate = true;
+  private swipeConfig: ViewerProOptions["swipeConfig"];
+  private preloadAdjacent = false;
+  private preloadCacheLimit = DEFAULT_PRELOAD_CACHE_LIMIT;
+  private imagePreloader = new ImagePreloader(DEFAULT_PRELOAD_CACHE_LIMIT);
+  private keyboardShortcuts = true;
+  private onOpenCb: ((item: ViewerItem, idx: number) => void) | null = null;
+  private onCloseCb: (() => void) | null = null;
+  private onIndexChangeCb: ((item: ViewerItem, idx: number) => void) | null =
+    null;
+  private onInfoPanelOpenCb: ((item: ViewerItem, idx: number) => void) | null =
+    null;
+  private onInfoPanelCloseCb: ((item: ViewerItem, idx: number) => void) | null =
+    null;
+  private transformListenerCount = 0;
 
   constructor(options: ViewerProOptions = {}) {
     this.images = Array.isArray(options.images) ? options.images : [];
@@ -237,20 +160,58 @@ export class ViewerPro {
         ? options.onTransformChange
         : null;
     this.theme = options.theme || "dark";
+    this.mobileToolbar = options.mobileToolbar ?? DEFAULT_MOBILE_TOOLBAR;
+    this.mobileSwipeToNavigate = options.mobileSwipeToNavigate !== false;
+    this.swipeConfig = options.swipeConfig;
+    this.preloadAdjacent = options.preloadAdjacent ?? false;
+    this.preloadCacheLimit =
+      options.preloadCacheLimit ?? DEFAULT_PRELOAD_CACHE_LIMIT;
+    this.imagePreloader = new ImagePreloader(this.preloadCacheLimit);
+    this.keyboardShortcuts = options.keyboardShortcuts !== false;
+    this.onOpenCb =
+      typeof options.onOpen === "function" ? options.onOpen : null;
+    this.onCloseCb =
+      typeof options.onClose === "function" ? options.onClose : null;
+    this.onIndexChangeCb =
+      typeof options.onIndexChange === "function"
+        ? options.onIndexChange
+        : null;
+    this.onInfoPanelOpenCb =
+      typeof options.onInfoPanelOpen === "function"
+        ? options.onInfoPanelOpen
+        : null;
+    this.onInfoPanelCloseCb =
+      typeof options.onInfoPanelClose === "function"
+        ? options.onInfoPanelClose
+        : null;
 
     // 初始化缩放配置 (defaults preserved from previous monolith)
     this.transformEngine = new TransformEngine({
-      min: options.zoomConfig?.min ?? ZOOM_MIN,
-      max: options.zoomConfig?.max ?? ZOOM_MAX,
-      step: options.zoomConfig?.step ?? ZOOM_STEP,
-      wheelBaseStep: options.zoomConfig?.wheelBaseStep ?? ZOOM_WHEEL_BASE_STEP,
-      wheelMaxStep: options.zoomConfig?.wheelMaxStep ?? ZOOM_WHEEL_MAX_STEP,
-      wheelSpeedMultiplier:
-        options.zoomConfig?.wheelSpeedMultiplier ?? ZOOM_WHEEL_SPEED_MULTIPLIER,
+      ...DEFAULT_ZOOM_CONFIG,
+      ...options.zoomConfig,
     });
 
     this.initializeContainer();
     this.initializeElements();
+    this.thumbnailController = new ThumbnailController({
+      container: this.thumbnailNav,
+      host: this.previewContainer,
+      onSelect: (index) => this.open(index),
+    });
+    this.keyboardController = new KeyboardController({
+      isEnabled: () => this.keyboardShortcuts,
+      isActive: () => this.previewContainer.classList.contains("active"),
+      isInfoOpen: () => this.infoPanel.classList.contains("open"),
+      closeInfo: () => this.closeInfoPanel(),
+      close: () => this.close(),
+      navigate: (direction) => this.navigate(direction),
+      zoomBy: (delta) =>
+        this.transformEngine.zoomBy(delta, this.computeContentBounds()),
+      reset: () => this.transformEngine.reset(),
+      toggleFullscreen: () => this.toggleFullscreen(),
+      download: () => this.downloadCurrentImage(),
+      getZoomStep: () => this.transformEngine.getConfig().step,
+    });
 
     // Resolve render backend (CSS / WebGL) based on options + capabilities.
     this.backendPreference = options.backend ?? "auto";
@@ -286,13 +247,14 @@ export class ViewerPro {
       container: this.imageContainer,
       engine: this.transformEngine,
       getBounds: () => this.computeContentBounds(),
-      onBackdropClick: () => this.close(),
+      onBackdropClick: () => this.handleBackdropClick(),
       onSwipe: (direction) => this.navigate(direction),
+      swipeEnabled: this.mobileSwipeToNavigate,
+      swipeConfig: this.swipeConfig,
       // dblclick falls back to engine.reset() (original behavior).
     });
     this.gestureController.bindBackdrop(this.previewContainer);
 
-    this.bindMethods();
     this.bindEvents();
 
     if (this.images.length > 0) {
@@ -301,184 +263,28 @@ export class ViewerPro {
   }
 
   private initializeContainer() {
-    // 检查是否已存在预览容器，避免重复创建
-    const existingContainer = document.getElementById("imagePreview");
-
-    if (existingContainer) {
-      // 复用现有容器，但先移除它
-      existingContainer.remove();
-    }
-
     this.previewContainer = document.createElement("div");
     this.previewContainer.className = "image-preview-container";
-    this.previewContainer.id = "imagePreview";
+    this.previewContainer.id =
+      this.instanceId === 0
+        ? "imagePreview"
+        : `imagePreview-${this.instanceId}`;
     this.previewContainer.setAttribute("data-theme", this.theme);
+    this.previewContainer.setAttribute(
+      "data-viewer-pro-instance",
+      String(this.instanceId),
+    );
+    this.previewContainer.setAttribute(
+      "data-mobile-toolbar",
+      this.mobileToolbar.join(" "),
+    );
     document.body.appendChild(this.previewContainer);
-    this.previewContainer.innerHTML = this.getContainerHTML();
-  }
-
-  private getContainerHTML(): string {
-    return `
-      <svg style="position: absolute; width: 0; height: 0;">
-        <defs>
-          <filter id="blur-overlay-filter" x="-100%" y="-100%" width="300%" height="300%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="2" result="turbulence"/>
-            <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="50" xChannelSelector="R" yChannelSelector="G" result="displacement"/>
-            <feGaussianBlur in="displacement" stdDeviation="40" result="blur"/>
-          </filter>
-        </defs>
-      </svg>
-      <div class="image-preview-overlay">
-        <canvas id="blurCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;"></canvas>
-        <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0;">
-          <defs>
-            <radialGradient id="grad1" cx="30%" cy="40%">
-              <stop offset="0%" style="stop-color:rgb(100,100,150);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(50,50,80);stop-opacity:0" />
-            </radialGradient>
-            <radialGradient id="grad2" cx="70%" cy="60%">
-              <stop offset="0%" style="stop-color:rgb(150,100,100);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(80,50,50);stop-opacity:0" />
-            </radialGradient>
-            <radialGradient id="grad3" cx="50%" cy="80%">
-              <stop offset="0%" style="stop-color:rgb(100,150,100);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(50,80,50);stop-opacity:0" />
-            </radialGradient>
-          </defs>
-          <rect width="100%" height="100%" fill="rgba(30,30,40,0.7)"/>
-          <circle cx="30%" cy="40%" r="40%" fill="url(#grad1)" filter="url(#blur-overlay-filter)"/>
-          <circle cx="70%" cy="60%" r="40%" fill="url(#grad2)" filter="url(#blur-overlay-filter)"/>
-          <circle cx="50%" cy="80%" r="35%" fill="url(#grad3)" filter="url(#blur-overlay-filter)"/>
-        </svg>
-      </div>
-      <div class="image-preview-content">
-        <!-- 左侧竖向操作栏 -->
-        <div class="side-toolbar" id="sideToolbar">
-          <button class="control-button" id="sideZoomIn" title="放大">${zoomInIcon}</button>
-          <button class="control-button" id="sideZoomOut" title="缩小">${zoomOutIcon}</button>
-          <button class="control-button" id="sideResetZoom" title="1:1">${resetZoomIcon}</button>
-          <div class="side-toolbar-sep"></div>
-          <button class="control-button" id="sideRotateLeft" title="向左旋转">${rotateLeftIcon}</button>
-          <button class="control-button" id="sideRotateRight" title="向右旋转">${rotateRightIcon}</button>
-          <div class="side-toolbar-sep"></div>
-          <button class="control-button" id="sideToggleThumbnails" title="缩略图">${gridIcon}</button>
-          <button class="control-button" id="sideFullscreen" title="全屏">${fullscreenIcon}</button>
-          <button class="control-button" id="sideDownload" title="下载">${downloadIcon}</button>
-          <button class="control-button" id="sideInfoOpen" title="信息">${infoIcon}</button>
-        </div>
-
-        <div class="image-preview-main-area">
-          <div class="image-preview-header">
-            <div class="image-preview-title" id="previewTitle">图片预览</div>
-            <div class="image-preview-close" id="closePreview" style="cursor:pointer;">
-              ${closeIcon}
-            </div>
-          </div>
-          <div class="image-preview-image-container" id="imageContainer">
-            <div class="loading-overlay" id="loadingIndicator" style="display:none;"><div class="image-loading"></div></div>
-            <button class="arrow-btn left-arrow" id="prevImage">${prevIcon}</button>
-            <button class="arrow-btn right-arrow" id="nextImage">${nextIcon}</button>
-            <div class="error-message" id="errorMessage" style="display:none;">
-              图片加载失败
-            </div>
-            <img src="" alt="预览图片" class="image-preview-image" id="previewImage" />
-          </div>
-        </div>
-        <!-- 右侧信息弹窗（灵感板/AI Assistant 风格） -->
-        <div class="info-modal" id="imageInfoPanel">
-          <button class="info-modal-close" id="infoCollapseBtn">${closeIcon}</button>
-          <div class="info-modal-header">信息面板</div>
-          <div class="info-panel-content" id="infoPanelContent"></div>
-        </div>
-      </div>
-      <div class="thumbnail-nav" id="thumbnailNav"></div>
-    `;
+    this.previewContainer.innerHTML = getViewerTemplate(this.instanceId);
   }
 
   private initializeElements() {
-    this.previewImage = this.previewContainer.querySelector(
-      "#previewImage",
-    ) as HTMLImageElement;
-    this.previewTitle = this.previewContainer.querySelector("#previewTitle")!;
-    this.closeButton = this.previewContainer.querySelector("#closePreview")!;
-    this.prevButton = this.previewContainer.querySelector(
-      "#prevImage",
-    ) as HTMLButtonElement;
-    this.nextButton = this.previewContainer.querySelector(
-      "#nextImage",
-    ) as HTMLButtonElement;
-    this.zoomInButton = this.previewContainer.querySelector(
-      "#zoomIn",
-    ) as HTMLButtonElement | null;
-    this.zoomOutButton = this.previewContainer.querySelector(
-      "#zoomOut",
-    ) as HTMLButtonElement | null;
-    this.resetZoomButton = this.previewContainer.querySelector(
-      "#resetZoom",
-    ) as HTMLButtonElement | null;
-    this.fullscreenButton = this.previewContainer.querySelector(
-      "#toggleFullscreen",
-    ) as HTMLButtonElement | null;
-    this.downloadButton = this.previewContainer.querySelector(
-      "#downloadImage",
-    ) as HTMLButtonElement | null;
-    this.toggleInfoBtn = this.previewContainer.querySelector(
-      "#toggleInfoPanelBtn",
-    ) as HTMLButtonElement | null;
-    this.toggleThumbsBtn = this.previewContainer.querySelector(
-      "#toggleThumbnails",
-    ) as HTMLButtonElement | null;
-    // 侧边栏元素
-    this.sideZoomInBtn = this.previewContainer.querySelector(
-      "#sideZoomIn",
-    ) as HTMLButtonElement;
-    this.sideZoomOutBtn = this.previewContainer.querySelector(
-      "#sideZoomOut",
-    ) as HTMLButtonElement;
-    this.sideResetZoomBtn = this.previewContainer.querySelector(
-      "#sideResetZoom",
-    ) as HTMLButtonElement;
-    this.sideRotateLeftBtn = this.previewContainer.querySelector(
-      "#sideRotateLeft",
-    ) as HTMLButtonElement;
-    this.sideRotateRightBtn = this.previewContainer.querySelector(
-      "#sideRotateRight",
-    ) as HTMLButtonElement;
-    this.sideFullscreenBtn = this.previewContainer.querySelector(
-      "#sideFullscreen",
-    ) as HTMLButtonElement;
-    this.sideDownloadBtn = this.previewContainer.querySelector(
-      "#sideDownload",
-    ) as HTMLButtonElement;
-    this.sideInfoBtn = this.previewContainer.querySelector(
-      "#sideInfoOpen",
-    ) as HTMLButtonElement;
-    this.sideToggleThumbsBtn = this.previewContainer.querySelector(
-      "#sideToggleThumbnails",
-    ) as HTMLButtonElement;
-    this.imageCounter = this.previewContainer.querySelector("#imageCounter");
-    this.loadingIndicator =
-      this.previewContainer.querySelector("#loadingIndicator")!;
-    this.errorMessage = this.previewContainer.querySelector("#errorMessage")!;
-    this.thumbnailNav = this.previewContainer.querySelector("#thumbnailNav")!;
-    this.imageContainer =
-      this.previewContainer.querySelector("#imageContainer")!;
-    this.infoPanel = this.previewContainer.querySelector(
-      "#imageInfoPanel",
-    )! as HTMLElement;
-    this.infoCollapseBtn = this.previewContainer.querySelector(
-      "#infoCollapseBtn",
-    )! as HTMLElement;
-    this.infoPanelContent = this.previewContainer.querySelector(
-      "#infoPanelContent",
-    )! as HTMLElement;
-  }
-
-  private bindMethods() {
-    // Only the keyboard handler is owned by ViewerPro now; everything
-    // else (mouse / wheel / touch / dblclick / backdrop) lives in
-    // GestureController.
-    this._boundKeyDown = this.handleKeyDown.bind(this);
+    const elements = collectViewerElements(this.previewContainer);
+    Object.assign(this, elements);
   }
 
   private bindEvents() {
@@ -542,7 +348,7 @@ export class ViewerPro {
     this.sideToggleThumbsBtn.addEventListener("click", () =>
       this.toggleThumbnails(),
     );
-    document.addEventListener("keydown", this._boundKeyDown);
+    this.keyboardController.bind();
     // 关闭信息弹窗按钮：阻止事件冒泡并强制关闭
     this.infoCollapseBtn.addEventListener("click", (evt) => {
       evt.stopPropagation();
@@ -562,59 +368,7 @@ export class ViewerPro {
   }
 
   private updateThumbnails() {
-    // 如果 thumbnailNav 还没有内容，首次渲染
-    if (this.thumbnailNav.childNodes.length !== this.images.length) {
-      this.thumbnailNav.innerHTML = "";
-      this.images.forEach((image, index) => {
-        const thumbnail = document.createElement("div");
-        thumbnail.className = `thumbnail${
-          index === this.currentIndex ? " active" : ""
-        }`;
-        thumbnail.innerHTML = `<img src="${
-          image.thumbnail || image.src
-        }" alt="${image.title}">`;
-        thumbnail.addEventListener("click", () => this.open(index));
-        this.thumbnailNav.appendChild(thumbnail);
-      });
-      this.lastActiveIndex = this.currentIndex;
-    } else if (this.lastActiveIndex !== this.currentIndex) {
-      // 只更新变化的缩略图，避免遍历所有元素
-      const children = this.thumbnailNav.children;
-      if (this.lastActiveIndex >= 0 && this.lastActiveIndex < children.length) {
-        children[this.lastActiveIndex].classList.remove("active");
-      }
-      if (this.currentIndex >= 0 && this.currentIndex < children.length) {
-        children[this.currentIndex].classList.add("active");
-      }
-      this.lastActiveIndex = this.currentIndex;
-    }
-
-    // 自动滚动到当前激活的缩略图
-    this.scrollToActiveThumbnail();
-  }
-
-  // 滚动到当前激活的缩略图
-  private scrollToActiveThumbnail() {
-    if (
-      this.currentIndex < 0 ||
-      this.currentIndex >= this.thumbnailNav.children.length
-    ) {
-      return;
-    }
-
-    const activeThumbnail = this.thumbnailNav.children[
-      this.currentIndex
-    ] as HTMLElement;
-    if (!activeThumbnail) return;
-
-    // 使用 scrollIntoView 滚动到可见区域
-    requestAnimationFrame(() => {
-      activeThumbnail.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
-    });
+    this.thumbnailController.update(this.images, this.currentIndex);
   }
 
   public open(index: number) {
@@ -638,47 +392,28 @@ export class ViewerPro {
     if (!isAlreadyOpen || !isSameImage) {
       this.previewContainer.classList.add("active");
     }
-    this.lockPageScroll();
+    this.scrollLock.lock();
+    this.onOpenCb?.(this.images[this.currentIndex], this.currentIndex);
   }
 
   public close() {
+    const wasActive = this.previewContainer.classList.contains("active");
     this.previewContainer.classList.remove("active");
-    this.unlockPageScroll();
+    this.closeInfoPanel();
+    this.previewContainer.classList.remove("thumbs-hidden", "is-zoomed");
+    this.scrollLock.unlock();
     if (this.isFullscreen) {
       this.toggleFullscreen();
     }
+    if (wasActive) this.onCloseCb?.();
   }
 
-  private lockPageScroll() {
-    if (document.body.style.position === "fixed") return;
-    this.lockedScrollY = window.scrollY || document.documentElement.scrollTop;
-    this.previousBodyStyles = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      left: document.body.style.left,
-      right: document.body.style.right,
-      width: document.body.style.width,
-      overflow: document.body.style.overflow,
-    };
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${this.lockedScrollY}px`;
-    document.body.style.left = "0";
-    document.body.style.right = "0";
-    document.body.style.width = "100%";
-    document.body.style.overflow = "hidden";
-  }
-
-  private unlockPageScroll() {
-    if (document.body.style.position !== "fixed") return;
-    document.body.style.position = this.previousBodyStyles.position || "";
-    document.body.style.top = this.previousBodyStyles.top || "";
-    document.body.style.left = this.previousBodyStyles.left || "";
-    document.body.style.right = this.previousBodyStyles.right || "";
-    document.body.style.width = this.previousBodyStyles.width || "";
-    document.body.style.overflow = this.previousBodyStyles.overflow || "";
-    window.scrollTo(0, this.lockedScrollY);
-    this.lockedScrollY = 0;
-    this.previousBodyStyles = {};
+  private handleBackdropClick() {
+    if (this.infoPanel.classList.contains("open")) {
+      this.closeInfoPanel();
+      return;
+    }
+    this.close();
   }
 
   // 检查并触发图片回调（用于处理图片已经加载完成的情况）
@@ -892,7 +627,9 @@ export class ViewerPro {
           oldNode.remove();
         }
 
-        const previewImg = document.getElementById("previewImage");
+        const previewImg = this.previewContainer.querySelector(
+          '[data-vp-role="previewImage"]',
+        );
         if (previewImg) {
           this.previewImage = previewImg as HTMLImageElement;
         }
@@ -1034,7 +771,7 @@ export class ViewerPro {
       this.infoPanelContent.appendChild(node);
     } else {
       // 回退默认渲染
-      this.infoPanelContent.innerHTML = this.renderImageInfo(img);
+      this.infoPanelContent.appendChild(this.renderImageInfo(img));
     }
   }
 
@@ -1236,11 +973,26 @@ export class ViewerPro {
 
   private setCurrentIndex(index: number) {
     if (index < 0 || index >= this.images.length) return;
+    const changed = this.currentIndex !== index;
     this.currentIndex = index;
     this.transformEngine.resetSilently();
     this.previewContainer.classList.remove("is-zoomed");
     this.updateThumbnails();
     this.updatePreview();
+    this.preloadAdjacentImages();
+    if (changed) {
+      this.onIndexChangeCb?.(this.images[this.currentIndex], this.currentIndex);
+    }
+  }
+
+  private preloadAdjacentImages() {
+    if (!this.preloadAdjacent || this.images.length <= 1) return;
+    [this.currentIndex - 1, this.currentIndex + 1].forEach((idx) => {
+      const item = this.images[idx];
+      if (!item) return;
+      const src = item.photoSrc || item.src;
+      this.imagePreloader.preload(src);
+    });
   }
 
   /**
@@ -1285,7 +1037,7 @@ export class ViewerPro {
   private syncTransformState() {
     const { scale, translateX, translateY, rotation } =
       this.transformEngine.getState();
-    this.previewContainer.classList.toggle("is-zoomed", scale > 1);
+    this.syncInternalTransformState(scale);
 
     // Only sync if there are listeners (callback or event listeners)
     if (
@@ -1332,8 +1084,12 @@ export class ViewerPro {
     if (this.onTransformChangeCb) this.onTransformChangeCb(state);
   }
 
+  private syncInternalTransformState(scale: number) {
+    this.previewContainer.classList.toggle("is-zoomed", scale > 1);
+  }
+
   // 外部可主动读取当前状态
-  public getState() {
+  public getState(): TransformChangeState {
     const { scale, translateX, translateY, rotation } =
       this.transformEngine.getState();
     return {
@@ -1348,25 +1104,28 @@ export class ViewerPro {
 
   // 便捷订阅方法：接收 transform 变化，返回取消订阅函数
   public onTransform(
-    listener: (state: {
-      scale: number;
-      translateX: number;
-      translateY: number;
-      rotation: number;
-      index: number;
-      image: ViewerItem | null;
-    }) => void,
-  ) {
+    listener: (state: TransformChangeState) => void,
+  ): () => void {
     const handler = (e: Event) => listener((e as CustomEvent).detail);
+    this.transformListenerCount += 1;
+    this.previewContainer.setAttribute("data-has-transform-listener", "true");
     this.previewContainer.addEventListener(
       "viewerpro:transform",
       handler as EventListener,
     );
-    return () =>
+    return () => {
       this.previewContainer.removeEventListener(
         "viewerpro:transform",
         handler as EventListener,
       );
+      this.transformListenerCount = Math.max(
+        0,
+        this.transformListenerCount - 1,
+      );
+      if (this.transformListenerCount === 0) {
+        this.previewContainer.removeAttribute("data-has-transform-listener");
+      }
+    };
   }
 
   // Drag / wheel handling moved to GestureController.
@@ -1405,59 +1164,32 @@ export class ViewerPro {
     document.body.removeChild(link);
   }
 
-  private handleKeyDown(e: KeyboardEvent) {
-    if (!this.previewContainer.classList.contains("active")) return;
-    switch (e.key) {
-      case "Escape":
-        // 优先关闭信息弹窗
-        if (this.infoPanel.classList.contains("open")) {
-          this.closeInfoPanel();
-        } else {
-          this.close();
-        }
-        break;
-      case "ArrowLeft":
-        this.navigate(-1);
-        break;
-      case "ArrowRight":
-        this.navigate(1);
-        break;
-      case "+":
-      case "=":
-        this.transformEngine.zoomBy(
-          this.transformEngine.getConfig().step,
-          this.computeContentBounds(),
-        );
-        break;
-      case "-":
-        this.transformEngine.zoomBy(
-          -this.transformEngine.getConfig().step,
-          this.computeContentBounds(),
-        );
-        break;
-      case "0":
-        this.transformEngine.reset();
-        break;
-      case "f":
-        this.toggleFullscreen();
-        break;
-      case "d":
-        this.downloadCurrentImage();
-        break;
-    }
-  }
-
   // 新增：渲染图片信息HTML
-  private renderImageInfo(img: ViewerItem): string {
+  private renderImageInfo(img: ViewerItem): HTMLElement {
     // 这里只做简单示例，实际可根据你的图片对象结构扩展
-    let html = `<div class='info-title'>图片信息</div>`;
-    if (img.title) html += `<div><b>标题：</b>${img.title}</div>`;
+    const fragment = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "info-title";
+    title.textContent = "图片信息";
+    fragment.appendChild(title);
+    if (img.title) {
+      fragment.appendChild(this.createInfoRow("标题", img.title));
+    }
     if ((img as any).info) {
       for (const k in (img as any).info) {
-        html += `<div><b>${k}：</b>${(img as any).info[k]}</div>`;
+        fragment.appendChild(this.createInfoRow(k, (img as any).info[k]));
       }
     }
-    return html;
+    return fragment;
+  }
+
+  private createInfoRow(label: string, value: unknown): HTMLElement {
+    const row = document.createElement("div");
+    const labelNode = document.createElement("b");
+    labelNode.textContent = `${label}：`;
+    row.appendChild(labelNode);
+    row.appendChild(document.createTextNode(String(value)));
+    return row;
   }
 
   private toggleInfoPanel() {
@@ -1469,34 +1201,59 @@ export class ViewerPro {
     }
   }
 
-  private openInfoPanel() {
+  public showInfoPanel() {
+    const wasOpen = this.infoPanel.classList.contains("open");
     this.infoPanel.classList.add("open");
+    this.previewContainer.classList.add("info-open");
     this.infoPanel.setAttribute("aria-hidden", "false");
+    if (!wasOpen) {
+      this.onInfoPanelOpenCb?.(
+        this.images[this.currentIndex],
+        this.currentIndex,
+      );
+    }
+  }
+
+  public hideInfoPanel() {
+    const wasOpen = this.infoPanel.classList.contains("open");
+    this.infoPanel.classList.remove("open");
+    this.previewContainer.classList.remove("info-open");
+    this.infoPanel.setAttribute("aria-hidden", "true");
+    if (wasOpen) {
+      this.onInfoPanelCloseCb?.(
+        this.images[this.currentIndex],
+        this.currentIndex,
+      );
+    }
+  }
+
+  public toggleInfo() {
+    this.toggleInfoPanel();
+  }
+
+  private openInfoPanel() {
+    this.showInfoPanel();
   }
 
   private closeInfoPanel() {
-    this.infoPanel.classList.remove("open");
-    this.infoPanel.setAttribute("aria-hidden", "true");
+    this.hideInfoPanel();
+  }
+
+  public showThumbnails() {
+    this.thumbnailController.show();
+  }
+
+  public hideThumbnails() {
+    this.thumbnailController.hide();
+  }
+
+  public toggleThumbnailNav() {
+    this.thumbnailController.toggle();
   }
 
   // 缩略图显示/隐藏切换
   private toggleThumbnails() {
-    if (!this.thumbnailNav) return;
-
-    // 切换 hidden class 来控制显示/隐藏
-    const isHidden = this.thumbnailNav.classList.contains("hidden");
-
-    if (isHidden) {
-      // 显示缩略图
-      this.thumbnailNav.classList.remove("hidden");
-      this.thumbnailNav.classList.add("open");
-      this.previewContainer.classList.remove("thumbs-hidden");
-    } else {
-      // 隐藏缩略图
-      this.thumbnailNav.classList.add("hidden");
-      this.thumbnailNav.classList.remove("open");
-      this.previewContainer.classList.add("thumbs-hidden");
-    }
+    this.thumbnailController.toggle();
   }
 
   /**
@@ -1540,13 +1297,13 @@ export class ViewerPro {
 
   // 新增：清理资源的方法
   public destroy() {
-    this.unlockPageScroll();
+    this.scrollLock.unlock();
     // 1. Detach DOM gestures (mouse / wheel / touch / dblclick + backdrop)
     if (this.gestureController) {
       this.gestureController.unbindBackdrop(this.previewContainer);
       this.gestureController.destroy();
     }
-    document.removeEventListener("keydown", this._boundKeyDown);
+    this.keyboardController.destroy();
 
     // 2. Abort in-flight resources
     if (this.activeBlobUrl) {
@@ -1573,8 +1330,9 @@ export class ViewerPro {
     }
 
     // 4. Drop cached references
+    this.imagePreloader.clear();
     this.cachedCustomNode = null;
-    this.lastActiveIndex = -1;
+    this.thumbnailController.reset();
 
     // 5. Detach preview DOM
     if (this.previewContainer && this.previewContainer.parentNode) {
@@ -1590,6 +1348,7 @@ export class ViewerPro {
     this.imageLoadToken = 0;
     this.currentImageLoadStatus = { loaded: false };
     this._loadingDoneCallback = null;
+    this.transformListenerCount = 0;
   }
 
   // 设置主题
@@ -1606,14 +1365,7 @@ export class ViewerPro {
   }
 
   // 设置缩放配置 — proxies to TransformEngine.
-  public setZoomConfig(config: {
-    min?: number;
-    max?: number;
-    step?: number;
-    wheelBaseStep?: number;
-    wheelMaxStep?: number;
-    wheelSpeedMultiplier?: number;
-  }) {
+  public setZoomConfig(config: ZoomConfig): void {
     this.transformEngine.setConfig({
       ...(config.min !== undefined ? { min: config.min } : {}),
       ...(config.max !== undefined ? { max: config.max } : {}),
@@ -1631,10 +1383,12 @@ export class ViewerPro {
   }
 
   // 获取缩放配置 — proxies to TransformEngine.
-  public getZoomConfig() {
+  public getZoomConfig(): TransformConfig {
     return this.transformEngine.getConfig();
   }
 }
 
 // 导出到 window 方便浏览器直接使用
-(window as any).ViewerPro = ViewerPro;
+if (typeof window !== "undefined") {
+  (window as any).ViewerPro = ViewerPro;
+}

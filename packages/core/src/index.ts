@@ -1,5 +1,13 @@
 export { ViewerPro } from "./ViewerPro";
-export type { ViewerProOptions, ViewerItem, LoadingContext } from "./ViewerPro";
+export type {
+  LoadingContext,
+  SwipeConfig,
+  ToolbarAction,
+  TransformChangeState,
+  ViewerItem,
+  ViewerProOptions,
+  ZoomConfig,
+} from "./types";
 // Backend types — exported so consumers can opt into webgl / css / auto.
 export type {
   RenderBackend,
@@ -8,4 +16,4 @@ export type {
   TransitionMode,
 } from "./backends/RenderBackend";
 export type { BackendChoice } from "./backends/BackendRouter";
-import "./ViewerPro.css";
+import "./ui/ViewerPro.css";
