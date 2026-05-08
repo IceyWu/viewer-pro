@@ -5,18 +5,24 @@ import { LivePhotoViewer } from "live-photo";
 import testData from "./assets/data.json";
 import ImageMetaPanel from "./components/ImageMetaPanel.vue";
 const imagesV2 = computed<ViewerItem[]>(() => {
-  return testData.map((item: any) => {
-    const file = item.file
+  return (testData as any).data.files.map((file: any) => {
+    const livePhotoVideo = file.live_photo_video;
+    const videoSrc =
+      livePhotoVideo?.video_variants?.find(
+        (variant: any) => variant.quality === "original",
+      )?.url ||
+      livePhotoVideo?.video_variants?.[0]?.url ||
+      livePhotoVideo?.url;
     const imgObj: ViewerItem = {
       ...file,
       src: file.url,
       title: file.name || "",
       thumbnail: `${file.url}?x-oss-process=image/resize,l_800/format,jpg`,
-      type: !!file.videoSrc ? "live-photo" : file.type,
+      type: videoSrc ? "live-photo" : file.type,
     };
     if (imgObj.type === "live-photo") {
       imgObj.photoSrc = file.url;
-      imgObj.videoSrc = file.videoSrc;
+      imgObj.videoSrc = videoSrc;
     }
     return imgObj;
   });
