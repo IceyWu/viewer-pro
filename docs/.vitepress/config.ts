@@ -1,80 +1,65 @@
-import { defineConfig } from 'vitepress'
-import viteConfig from './vite.config'
+import { defineConfig } from "vitepress";
+import viteConfig from "./vite.config";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   vite: viteConfig,
   title: "ViewerPro",
   description: "现代化的图片预览组件",
-  lang: 'zh-CN',
+  lang: "zh-CN",
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
-      { text: '首页', link: '/' },
-      { text: '指南', link: '/guide/' },
-      { text: 'API', link: '/api/' },
-      { text: '示例', link: '/demos/basic' }
+      { text: "首页", link: "/" },
+      { text: "指南", link: "/guide/" },
+      { text: "API", link: "/api/" },
+      { text: "配置实验台", link: "/api/options" },
     ],
 
     sidebar: {
-      '/guide/': [
+      "/guide/": [
         {
-          text: '开始',
+          text: "开始",
           items: [
-            { text: '介绍', link: '/guide/' },
-            { text: '快速开始', link: '/guide/getting-started' },
-            { text: '安装', link: '/guide/installation' }
-          ]
+            { text: "介绍", link: "/guide/" },
+            { text: "快速开始", link: "/guide/getting-started" },
+            { text: "安装", link: "/guide/installation" },
+          ],
         },
         {
-          text: '基础',
+          text: "高级功能",
           items: [
-            { text: '基础示例', link: '/guide/examples' }
-          ]
+            { text: "自定义 Loading", link: "/guide/custom-loading" },
+            { text: "自定义渲染", link: "/guide/custom-render" },
+            { text: "自定义信息面板", link: "/guide/custom-info" },
+            { text: "主题和配置", link: "/guide/theme-and-config" },
+          ],
         },
-        {
-          text: '高级功能',
-          items: [
-            { text: '自定义 Loading', link: '/guide/custom-loading' },
-            { text: '自定义渲染', link: '/guide/custom-render' },
-            { text: '自定义信息面板', link: '/guide/custom-info' },
-            { text: '主题和配置', link: '/guide/theme-and-config' }
-          ]
-        }
       ],
-      '/api/': [
+      "/api/": [
         {
-          text: 'API 参考',
+          text: "API 参考",
           items: [
-            { text: '概览', link: '/api/' },
-            { text: 'ViewerPro', link: '/api/viewer-pro' },
-            { text: '类型定义', link: '/api/types' }
-          ]
-        }
+            { text: "概览", link: "/api/" },
+            { text: "配置属性演示", link: "/api/options" },
+            { text: "ViewerPro", link: "/api/viewer-pro" },
+            { text: "类型定义", link: "/api/types" },
+          ],
+        },
       ],
-      '/demos/': [
-        {
-          text: '示例',
-          items: [
-            { text: '基础用法', link: '/demos/basic' },
-            { text: '自定义', link: '/demos/custom' },
-            { text: '高级用法', link: '/demos/advanced' }
-          ]
-        }
-      ]
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/iceywu/viewer-pro' }
+      { icon: "github", link: "https://github.com/iceywu/viewer-pro" },
     ],
 
     footer: {
-      message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024-present Icey Wu'
+      message: "Released under the MIT License.",
+      copyright: "Copyright © 2024-present Icey Wu",
     },
 
     search: {
-      provider: 'local'
-    }
-  }
-})
+      provider: "local",
+    },
+  },
+});

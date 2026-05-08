@@ -147,6 +147,96 @@ const customRender = (imgObj: ViewerItem, idx: number) => {
 }
 ```
 
+## 自定义渲染的加载时机
+
+默认图片由 ViewerPro 内部控制加载状态。使用 `renderNode` 后，自定义节点可能包含 `<img>`、`video`、Live Photo 容器或第三方组件，因此建议在内容真正可见后主动通知 ViewerPro。
+
+```typescript
+const viewer = new ViewerPro({
+  images,
+  renderNode: customRender,
+  onContentReady: (item, index) => {
+    console.log('内容已就绪', item, index)
+  }
+})
+
+viewer.notifyContentReady()
+viewer.closeLoading()
+```
+
+对于需要容器尺寸的第三方组件，应等待 DOM 节点具备非零宽高后再初始化。
+
+```typescript
+const waitForElementSize = (el: HTMLElement): Promise<DOMRect> =>
+  new Promise((resolve) => {
+    const check = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        resolve(rect)
+        return
+      }
+      requestAnimationFrame(check)
+    }
+
+    check()
+  })
+```
+
+## BlurHash 占位
+
+`ViewerItem` 允许扩展任意字段，因此可以把服务端返回的 `blurhash`、`width`、`height` 放入预览项。自定义渲染时可以先绘制与真实图片同宽高比例的占位层，图片加载完成后移除。
+
+```typescript
+const customRender = (item: ViewerItem, index: number) => {
+  const box = document.createElement('div')
+  box.id = `custom-render-${index}`
+  box.style.cssText = `
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    will-change: transform;
+  `
+
+  const frame = document.createElement('div')
+  frame.style.cssText = `
+    position: relative;
+    width: min(100%, ${item.width || 1200}px);
+    aspect-ratio: ${(item.width || 4) / (item.height || 3)};
+  `
+
+  const placeholder = document.createElement('canvas')
+  placeholder.style.cssText = `
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  `
+
+  const image = document.createElement('img')
+  image.src = item.src
+  image.alt = item.title || ''
+  image.style.cssText = `
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  `
+  image.addEventListener('load', () => placeholder.remove(), { once: true })
+
+  frame.append(placeholder, image)
+  box.appendChild(frame)
+
+  return box
+}
+```
+
+上面的示例省略了具体的 BlurHash 解码逻辑；你可以使用 `blurhash` 包把 `item.blurhash` 解码后写入 `canvas`。
+
 ## 实际示例
 
 ### 示例 1：基础自定义渲染
@@ -219,7 +309,7 @@ viewer.init()
 
 ### 示例 2：Live Photo 渲染
 
-#### 在线演示
+#### Live Photo 在线演示
 
 <ClientOnly>
   <LivePhotoDemo />

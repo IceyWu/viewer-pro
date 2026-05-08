@@ -10,8 +10,8 @@ hero:
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
-      text: 查看示例
-      link: /demos/basic
+      text: 配置实验台
+      link: /api/options
     - theme: alt
       text: GitHub
       link: https://github.com/iceywu/viewer-pro

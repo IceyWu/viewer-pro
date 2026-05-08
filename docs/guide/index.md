@@ -28,4 +28,4 @@ ViewerPro 支持所有现代浏览器：
 
 - [快速开始](/guide/getting-started) - 了解如何安装和使用 ViewerPro
 - [API 文档](/api/) - 查看完整的 API 参考
-- [示例](/demos/basic) - 查看更多使用示例
+- [配置实验台](/api/options) - 在线修改配置并查看效果

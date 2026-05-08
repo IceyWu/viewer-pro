@@ -55,7 +55,7 @@ viewer.close()
 
 ### addImages(images)
 
-添加或更新图片列表。
+替换当前图片列表。
 
 ```typescript
 viewer.addImages([
@@ -65,6 +65,11 @@ viewer.addImages([
 
 **参数:**
 - `images: ViewerItem[]` - 预览项对象数组
+
+**说明:**
+- `addImages()` 只更新内部数据，不会立即创建缩略图请求。
+- 首次调用 `open(index)` 后才会渲染缩略图导航。
+- 缩略图图片会按需懒加载，优先加载当前索引附近和滚动进入可视区域附近的项目。
 
 ### getState()
 
@@ -127,6 +132,54 @@ viewer.notifyContentReady()
 
 ```typescript
 viewer.closeLoading()
+```
+
+### showInfoPanel()
+
+打开信息面板。
+
+```typescript
+viewer.showInfoPanel()
+```
+
+### hideInfoPanel()
+
+关闭信息面板。
+
+```typescript
+viewer.hideInfoPanel()
+```
+
+### toggleInfo()
+
+切换信息面板显示状态。
+
+```typescript
+viewer.toggleInfo()
+```
+
+### showThumbnails()
+
+显示缩略图导航。
+
+```typescript
+viewer.showThumbnails()
+```
+
+### hideThumbnails()
+
+隐藏缩略图导航。
+
+```typescript
+viewer.hideThumbnails()
+```
+
+### toggleThumbnailNav()
+
+切换缩略图导航显示状态。
+
+```typescript
+viewer.toggleThumbnailNav()
 ```
 
 ### destroy()
@@ -228,6 +281,17 @@ ViewerPro 支持以下键盘快捷键：
 - `d` - 下载当前图片
 
 **注意:** 键盘快捷键仅在预览器激活时有效。
+
+## 缩略图加载策略
+
+ViewerPro 面向大图集场景做了缩略图加载优化：
+
+- 构造函数和 `addImages()` 只保存数据，不会立即请求全部缩略图。
+- 缩略图导航在首次 `open(index)` 后渲染。
+- 缩略图图片先保存在 `data-src`，只在当前索引附近或进入缩略图导航可视区域附近时设置真实 `src`。
+- 默认会预加载当前索引前后少量缩略图，保证快速切换时的体验。
+
+这只影响缩略图导航的加载行为；当前预览大图仍按当前索引正常加载。
 
 ## 下一步
 

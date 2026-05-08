@@ -2,9 +2,12 @@
 
 ViewerPro 提供了简洁而强大的 API，让你可以轻松实现各种图片预览需求。
 
+如果你想直接调整配置并查看效果，优先查看 [配置属性演示](/api/options)。
+
 ## 主要类
 
 - [ViewerPro](/api/viewer-pro) - 核心类，提供图片预览功能
+- [配置属性演示](/api/options) - 通过 Demo 理解主要配置项的效果
 
 ## 类型定义
 
@@ -25,8 +28,10 @@ new ViewerPro(options?: ViewerProOptions)
 - `init()` - 初始化事件绑定
 - `open(index: number)` - 打开指定索引的预览项
 - `close()` - 关闭预览
-- `addImages(images: ViewerItem[])` - 添加预览项
+- `addImages(images: ViewerItem[])` - 替换预览项；不会立即请求缩略图
 - `getState()` - 获取当前状态
+- `showInfoPanel()` / `hideInfoPanel()` - 控制信息面板
+- `showThumbnails()` / `hideThumbnails()` - 控制缩略图导航
 - `destroy()` - 销毁实例
 
 ### 配置选项
@@ -35,6 +40,10 @@ new ViewerPro(options?: ViewerProOptions)
 - `loadingNode` - 自定义 loading 节点
 - `renderNode` - 自定义渲染节点
 - `infoRender` - 自定义信息面板
+- `theme` - 主题模式
+- `mobileToolbar` - 移动端工具栏按钮
+- `keyboardShortcuts` - 键盘快捷键
+- `preloadAdjacent` - 相邻原图预加载
 - `onImageLoad` - 图片加载回调
 - `onContentReady` - 内容就绪回调
 - `onTransformChange` - 变换状态改变回调
@@ -42,4 +51,5 @@ new ViewerPro(options?: ViewerProOptions)
 ## 下一步
 
 - [ViewerPro 类详细文档](/api/viewer-pro)
+- [配置属性演示](/api/options)
 - [类型定义详细文档](/api/types)
