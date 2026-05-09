@@ -11,6 +11,7 @@ import type { ContentBounds, TransformConfig } from "./engine/TransformEngine";
 import { GestureController } from "./engine/GestureController";
 import { decodeBlob } from "./engine/ImageDecoder";
 import {
+  DEFAULT_TOOLBAR,
   DEFAULT_MOBILE_TOOLBAR,
   DEFAULT_PRELOAD_CACHE_LIMIT,
   DEFAULT_ZOOM_CONFIG,
@@ -127,6 +128,7 @@ export class ViewerPro {
   private thumbnailController!: ThumbnailController;
   private keyboardController!: KeyboardController;
   private scrollLock = new ScrollLock();
+  private toolbar: ToolbarAction[] = DEFAULT_TOOLBAR;
   private mobileToolbar: ToolbarAction[] = DEFAULT_MOBILE_TOOLBAR;
   private mobileSwipeToNavigate = true;
   private swipeConfig: ViewerProOptions["swipeConfig"];
@@ -160,6 +162,7 @@ export class ViewerPro {
         ? options.onTransformChange
         : null;
     this.theme = options.theme || "dark";
+    this.toolbar = options.toolbar ?? DEFAULT_TOOLBAR;
     this.mobileToolbar = options.mobileToolbar ?? DEFAULT_MOBILE_TOOLBAR;
     this.mobileSwipeToNavigate = options.mobileSwipeToNavigate !== false;
     this.swipeConfig = options.swipeConfig;
@@ -270,6 +273,7 @@ export class ViewerPro {
       "data-viewer-pro-instance",
       String(this.instanceId),
     );
+    this.previewContainer.setAttribute("data-toolbar", this.toolbar.join(" "));
     this.previewContainer.setAttribute(
       "data-mobile-toolbar",
       this.mobileToolbar.join(" "),

@@ -1,6 +1,6 @@
 # 配置实验台
 
-这个页面提供一个可以在线修改 `ViewerProOptions` 的实验台。你可以直接编辑 JSON 配置，点击“应用配置”后立即打开预览查看效果。
+这个页面提供一个可以在线修改 `ViewerProOptions` 的实验台。通过可视化控件调整配置项，预览器会实时重建，无需手动输入 JSON。
 
 <script setup>
 import { defineClientComponent } from 'vitepress'

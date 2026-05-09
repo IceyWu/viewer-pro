@@ -314,13 +314,18 @@ export class WebGLBackend implements RenderBackend {
       gl.STATIC_DRAW,
     );
 
-    // UVs (Y flipped because GL textures load with Y-up by default; flipping
-    // here keeps texImage2D source orientation matching CSS Y-down).
+    // UVs aligned with quad positions. Quad is in image-space with +Y up
+    // (-0.5..+0.5). The final matrix applies a clip-space Y-flip
+    // (sy = -2/cssH) so that image-space +Y ends up at the screen bottom.
+    // Combined with UNPACK_FLIP_Y_WEBGL=false (V=0 at image top row), the
+    // quad vertex at y=-0.5 (rendered at screen TOP) must sample V=0,
+    // and y=+0.5 (rendered at screen BOTTOM) must sample V=1.
+    // Quad order: (-0.5,-0.5), (0.5,-0.5), (-0.5,0.5), (-0.5,0.5), (0.5,-0.5), (0.5,0.5)
     this.uvBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
     gl.bufferData(
       gl.ARRAY_BUFFER,
-      new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]),
+      new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
       gl.STATIC_DRAW,
     );
 

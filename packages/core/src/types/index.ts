@@ -81,6 +81,7 @@ export interface ViewerProOptions {
   zoomConfig?: ZoomConfig;
   backend?: BackendChoice;
   webglFiltering?: "linear" | "nearest";
+  toolbar?: ToolbarAction[];
   mobileToolbar?: ToolbarAction[];
   mobileSwipeToNavigate?: boolean;
   swipeConfig?: SwipeConfig;

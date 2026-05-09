@@ -159,6 +159,23 @@
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  display: none;
+}
+.image-preview-container[data-toolbar~="zoomIn"] [data-vp-role="sideZoomIn"],
+.image-preview-container[data-toolbar~="zoomOut"] [data-vp-role="sideZoomOut"],
+.image-preview-container[data-toolbar~="reset"] [data-vp-role="sideResetZoom"],
+.image-preview-container[data-toolbar~="rotateLeft"]
+  [data-vp-role="sideRotateLeft"],
+.image-preview-container[data-toolbar~="rotateRight"]
+  [data-vp-role="sideRotateRight"],
+.image-preview-container[data-toolbar~="thumbnails"]
+  [data-vp-role="sideToggleThumbnails"],
+.image-preview-container[data-toolbar~="fullscreen"]
+  [data-vp-role="sideFullscreen"],
+.image-preview-container[data-toolbar~="download"]
+  [data-vp-role="sideDownload"],
+.image-preview-container[data-toolbar~="info"] [data-vp-role="sideInfoOpen"] {
+  display: flex;
 }
 .side-toolbar .control-button::before {
   content: "";
@@ -720,7 +737,6 @@
     width: 2.25rem;
     height: 2.25rem;
   }
-
 }
 .info-title {
   font-size: 1.2rem;

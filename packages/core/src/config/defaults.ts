@@ -17,6 +17,18 @@ export const DEFAULT_ZOOM_CONFIG: TransformConfig = {
   wheelSpeedMultiplier: DEFAULT_ZOOM_WHEEL_SPEED_MULTIPLIER,
 };
 
+export const DEFAULT_TOOLBAR: ToolbarAction[] = [
+  "zoomIn",
+  "zoomOut",
+  "reset",
+  "rotateLeft",
+  "rotateRight",
+  "thumbnails",
+  "fullscreen",
+  "download",
+  "info",
+];
+
 export const DEFAULT_MOBILE_TOOLBAR: ToolbarAction[] = [
   "rotateLeft",
   "rotateRight",
