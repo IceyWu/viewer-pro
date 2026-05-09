@@ -72,6 +72,7 @@ export interface ViewerProOptions {
             done: (context: LoadingContext) => void | Promise<void>;
           });
   images?: ViewerItem[];
+  itemSelector?: string;
   renderNode?: HTMLElement | ((item: ViewerItem, idx: number) => HTMLElement);
   onImageLoad?: (item: ViewerItem, idx: number) => void;
   onContentReady?: (item: ViewerItem, idx: number) => void;

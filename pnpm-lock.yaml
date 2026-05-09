@@ -17,6 +17,9 @@ importers:
 
   docs:
     dependencies:
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       live-photo:
         specifier: ^0.0.48
         version: 0.0.48

@@ -1,53 +1,24 @@
 import { defineConfig } from "vitepress";
 import viteConfig from "./vite.config";
 
-// https://vitepress.dev/reference/site-config
 export default defineConfig({
   vite: viteConfig,
   title: "ViewerPro",
   description: "现代化的图片预览组件",
   lang: "zh-CN",
   themeConfig: {
-    // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: "首页", link: "/" },
-      { text: "指南", link: "/guide/" },
-      { text: "API", link: "/api/" },
-      { text: "配置实验台", link: "/api/options" },
+      { text: "文档", link: "/docs" },
+      { text: "实验台", link: "/playground" },
+      { text: "Live Photo", link: "/live-photo" },
     ],
 
-    sidebar: {
-      "/guide/": [
-        {
-          text: "开始",
-          items: [
-            { text: "介绍", link: "/guide/" },
-            { text: "快速开始", link: "/guide/getting-started" },
-            { text: "安装", link: "/guide/installation" },
-          ],
-        },
-        {
-          text: "高级功能",
-          items: [
-            { text: "自定义 Loading", link: "/guide/custom-loading" },
-            { text: "自定义渲染", link: "/guide/custom-render" },
-            { text: "自定义信息面板", link: "/guide/custom-info" },
-            { text: "主题和配置", link: "/guide/theme-and-config" },
-          ],
-        },
-      ],
-      "/api/": [
-        {
-          text: "API 参考",
-          items: [
-            { text: "概览", link: "/api/" },
-            { text: "配置属性演示", link: "/api/options" },
-            { text: "ViewerPro", link: "/api/viewer-pro" },
-            { text: "类型定义", link: "/api/types" },
-          ],
-        },
-      ],
-    },
+    sidebar: [
+      { text: "文档", link: "/docs" },
+      { text: "配置实验台", link: "/playground" },
+      { text: "Live Photo 与 BlurHash", link: "/live-photo" },
+    ],
 
     socialLinks: [
       { icon: "github", link: "https://github.com/iceywu/viewer-pro" },

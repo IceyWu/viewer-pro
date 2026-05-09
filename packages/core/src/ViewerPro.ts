@@ -104,6 +104,7 @@ export class ViewerPro {
   private currentIndex = 0;
   private isFullscreen = false;
   private theme: "dark" | "light" | "auto" = "dark";
+  private itemSelector: string = ".viewer-pro-item";
   private imageLoadToken: number = 0;
   private currentImageLoadStatus: { loaded: boolean; error?: string } = {
     loaded: false,
@@ -162,6 +163,7 @@ export class ViewerPro {
         ? options.onTransformChange
         : null;
     this.theme = options.theme || "dark";
+    this.itemSelector = options.itemSelector || ".viewer-pro-item";
     this.toolbar = options.toolbar ?? DEFAULT_TOOLBAR;
     this.mobileToolbar = options.mobileToolbar ?? DEFAULT_MOBILE_TOOLBAR;
     this.mobileSwipeToNavigate = options.mobileSwipeToNavigate !== false;
@@ -357,7 +359,8 @@ export class ViewerPro {
   }
 
   public init() {
-    document.querySelectorAll(".image-grid-item").forEach((item, index) => {
+    const selector = this.itemSelector;
+    document.querySelectorAll(selector).forEach((item, index) => {
       item.addEventListener("click", () => this.open(index));
     });
   }
@@ -516,6 +519,9 @@ export class ViewerPro {
     this.showLoading(currentImage, this.currentIndex);
     this.errorMessage.style.display = "none";
     this.previewImage.style.display = "none";
+
+    // Clear the render backend (WebGL canvas) so the previous frame doesn't linger
+    this.renderBackend.setImageSource?.(null);
     this.previewTitle.textContent = currentImage.title || "图片预览";
     if (this.imageCounter)
       this.imageCounter.textContent = `${this.currentIndex + 1} / ${

@@ -8,10 +8,10 @@ hero:
   actions:
     - theme: brand
       text: 快速开始
-      link: /guide/getting-started
+      link: /docs
     - theme: alt
       text: 配置实验台
-      link: /api/options
+      link: /playground
     - theme: alt
       text: GitHub
       link: https://github.com/iceywu/viewer-pro
