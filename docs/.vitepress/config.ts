@@ -12,12 +12,14 @@ export default defineConfig({
       { text: "文档", link: "/docs" },
       { text: "实验台", link: "/playground" },
       { text: "Live Photo", link: "/live-photo" },
+      { text: "更新日志", link: "/changelog" },
     ],
 
     sidebar: [
       { text: "文档", link: "/docs" },
       { text: "配置实验台", link: "/playground" },
       { text: "Live Photo 与 BlurHash", link: "/live-photo" },
+      { text: "更新日志", link: "/changelog" },
     ],
 
     socialLinks: [
