@@ -21,6 +21,7 @@ export type DecodedImage =
       image: HTMLImageElement;
       width: number;
       height: number;
+      objectUrl?: string;
     };
 
 /**
@@ -46,12 +47,19 @@ export async function decodeBlob(blob: Blob): Promise<DecodedImage> {
       );
     }
   }
-  return decodeViaImgElement(URL.createObjectURL(blob));
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    return await decodeViaImgElement(objectUrl, objectUrl);
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
 }
 
 /** Decode by assigning to an <img> element and awaiting `decode()` / load. */
 export async function decodeViaImgElement(
-  url: string
+  url: string,
+  objectUrl?: string,
 ): Promise<DecodedImage> {
   const image = new Image();
   // crossOrigin not set: blob URLs are same-origin; remote URLs that need
@@ -71,6 +79,7 @@ export async function decodeViaImgElement(
     image,
     width: image.naturalWidth,
     height: image.naturalHeight,
+    ...(objectUrl ? { objectUrl } : {}),
   };
 }
 
@@ -106,5 +115,8 @@ export function disposeDecoded(decoded: DecodedImage | null): void {
     } catch {
       /* ignore */
     }
+  } else if (decoded.objectUrl) {
+    URL.revokeObjectURL(decoded.objectUrl);
+    decoded.image.removeAttribute("src");
   }
 }

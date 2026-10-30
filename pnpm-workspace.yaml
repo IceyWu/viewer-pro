@@ -2,3 +2,5 @@ packages:
   - 'packages/core'
   - 'playground'
   - 'docs'
+allowBuilds:
+  esbuild: false

@@ -36,4 +36,4 @@ export const DEFAULT_MOBILE_TOOLBAR: ToolbarAction[] = [
   "info",
 ];
 
-export const DEFAULT_PRELOAD_CACHE_LIMIT = 100;
+export const DEFAULT_PRELOAD_CACHE_LIMIT = 5;

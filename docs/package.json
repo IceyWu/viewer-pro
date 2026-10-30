@@ -12,13 +12,13 @@
     "docs:preview": "vitepress preview"
   },
   "devDependencies": {
-    "vite": "^6.0.5",
-    "vitepress": "^1.5.0",
-    "vue": "^3.5.13"
+    "vite": "^8.3.5",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.44"
   },
   "dependencies": {
     "blurhash": "^2.0.5",
-    "live-photo": "^0.0.48",
+    "live-photo": "^0.2.0",
     "viewer-pro": "workspace:*"
   }
 }

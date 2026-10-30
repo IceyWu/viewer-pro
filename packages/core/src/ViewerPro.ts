@@ -9,7 +9,7 @@ import {
 import { TransformEngine } from "./engine/TransformEngine";
 import type { ContentBounds, TransformConfig } from "./engine/TransformEngine";
 import { GestureController } from "./engine/GestureController";
-import { decodeBlob } from "./engine/ImageDecoder";
+import { decodeBlob, disposeDecoded } from "./engine/ImageDecoder";
 import {
   DEFAULT_TOOLBAR,
   DEFAULT_MOBILE_TOOLBAR,
@@ -102,6 +102,10 @@ export class ViewerPro {
 
   private images: ViewerItem[] = [];
   private currentIndex = 0;
+  private itemClickBindings: Array<{
+    item: Element;
+    handler: EventListener;
+  }> = [];
   private isFullscreen = false;
   private theme: "dark" | "light" | "auto" = "dark";
   private itemSelector: string = ".viewer-pro-item";
@@ -113,6 +117,7 @@ export class ViewerPro {
   private imageErrorCallbacks: Array<(error: string) => void> = [];
   // Resource management
   private activeBlobUrl: string | null = null;
+  private retiredBlobUrls = new Set<string>();
   private activeXHR: XMLHttpRequest | null = null;
   // Cached custom render node (also a render-backend target)
   private cachedCustomNode: HTMLElement | null = null;
@@ -359,10 +364,20 @@ export class ViewerPro {
   }
 
   public init() {
+    this.unbindItems();
     const selector = this.itemSelector;
     document.querySelectorAll(selector).forEach((item, index) => {
-      item.addEventListener("click", () => this.open(index));
+      const handler: EventListener = () => this.open(index);
+      item.addEventListener("click", handler);
+      this.itemClickBindings.push({ item, handler });
     });
+  }
+
+  private unbindItems() {
+    this.itemClickBindings.forEach(({ item, handler }) => {
+      item.removeEventListener("click", handler);
+    });
+    this.itemClickBindings = [];
   }
 
   public addImages(images: ViewerItem[]) {
@@ -389,7 +404,7 @@ export class ViewerPro {
       });
     }
 
-    this.setCurrentIndex(index);
+    this.setCurrentIndex(index, isAlreadyOpen);
 
     if (!isAlreadyOpen || !isSameImage) {
       this.previewContainer.classList.add("active");
@@ -424,7 +439,8 @@ export class ViewerPro {
       this.currentImageLoadStatus.loaded &&
       this.imageLoadCallbacks.length > 0
     ) {
-      this.imageLoadCallbacks.forEach((callback) => {
+      const callbacks = this.imageLoadCallbacks.splice(0);
+      callbacks.forEach((callback) => {
         try {
           callback();
         } catch (e) {
@@ -435,7 +451,8 @@ export class ViewerPro {
       this.currentImageLoadStatus.error &&
       this.imageErrorCallbacks.length > 0
     ) {
-      this.imageErrorCallbacks.forEach((callback) => {
+      const callbacks = this.imageErrorCallbacks.splice(0);
+      callbacks.forEach((callback) => {
         try {
           callback(this.currentImageLoadStatus.error || "未知错误");
         } catch (e) {
@@ -488,7 +505,12 @@ export class ViewerPro {
     }
   }
 
-  private updatePreview() {
+  private updatePreview(preserveCurrentImage = false) {
+    const keepPreviousImage =
+      preserveCurrentImage &&
+      !!this.activeBlobUrl &&
+      this.previewImage.style.display !== "none";
+
     // Abort previous XHR request if exists
     if (this.activeXHR) {
       try {
@@ -497,16 +519,6 @@ export class ViewerPro {
         console.warn("Failed to abort XHR:", e);
       }
       this.activeXHR = null;
-    }
-
-    // Revoke previous blob URL if exists
-    if (this.activeBlobUrl) {
-      try {
-        URL.revokeObjectURL(this.activeBlobUrl);
-      } catch (e) {
-        console.warn("Failed to revoke blob URL:", e);
-      }
-      this.activeBlobUrl = null;
     }
 
     // Reset loading state to prevent race conditions
@@ -518,10 +530,16 @@ export class ViewerPro {
     const currentImage = this.images[this.currentIndex];
     this.showLoading(currentImage, this.currentIndex);
     this.errorMessage.style.display = "none";
-    this.previewImage.style.display = "none";
-
-    // Clear the render backend (WebGL canvas) so the previous frame doesn't linger
-    this.renderBackend.setImageSource?.(null);
+    if (keepPreviousImage) {
+      if (!this.customLoadingNode) this.hideLoading();
+    } else {
+      this.previewImage.style.display = "none";
+      if (this.activeBlobUrl) {
+        URL.revokeObjectURL(this.activeBlobUrl);
+        this.activeBlobUrl = null;
+      }
+      this.renderBackend.setImageSource?.(null);
+    }
     this.previewTitle.textContent = currentImage.title || "图片预览";
     if (this.imageCounter)
       this.imageCounter.textContent = `${this.currentIndex + 1} / ${
@@ -611,11 +629,25 @@ export class ViewerPro {
         const blob = xhr.response;
         const url = URL.createObjectURL(blob);
 
+        const previousBlobUrl = this.activeBlobUrl;
         // Store new blob URL reference
         this.activeBlobUrl = url;
         // Clear XHR reference as it's complete
         this.activeXHR = null;
 
+        if (previousBlobUrl) {
+          this.retiredBlobUrls.add(previousBlobUrl);
+          const releasePreviousBlob = () => {
+            this.previewImage.removeEventListener("load", releasePreviousBlob);
+            this.previewImage.removeEventListener("error", releasePreviousBlob);
+            this.retiredBlobUrls.delete(previousBlobUrl);
+            if (previousBlobUrl !== this.activeBlobUrl) {
+              URL.revokeObjectURL(previousBlobUrl);
+            }
+          };
+          this.previewImage.addEventListener("load", releasePreviousBlob);
+          this.previewImage.addEventListener("error", releasePreviousBlob);
+        }
         this.previewImage.src = url;
         this.previewImage.style.display = "block";
 
@@ -647,11 +679,18 @@ export class ViewerPro {
         if (this.backendKind === "webgl") {
           const token = this.imageLoadToken;
           decodeBlob(blob)
-            .then((decoded) => {
-              if (token !== this.imageLoadToken) return; // navigated away
+            .then(async (decoded) => {
+              if (token !== this.imageLoadToken) {
+                disposeDecoded(decoded);
+                return;
+              }
               const source =
                 decoded.kind === "bitmap" ? decoded.bitmap : decoded.image;
-              return this.renderBackend.setImageSource?.(source);
+              try {
+                await this.renderBackend.setImageSource?.(source);
+              } finally {
+                disposeDecoded(decoded);
+              }
             })
             .catch((err) => {
               console.warn(
@@ -668,13 +707,7 @@ export class ViewerPro {
         // 更新图片加载状态
         this.currentImageLoadStatus = { loaded: true };
         // 触发图片加载完成回调
-        this.imageLoadCallbacks.forEach((callback) => {
-          try {
-            callback();
-          } catch (e) {
-            console.warn("Image load callback error:", e);
-          }
-        });
+        this.checkAndTriggerImageCallbacks();
       } else {
         this.activeXHR = null;
         this.handleImageError("http", xhr.status);
@@ -753,13 +786,7 @@ export class ViewerPro {
     // 更新图片加载状态
     this.currentImageLoadStatus = { loaded: false, error: errorMessage };
     // 触发图片加载失败回调
-    this.imageErrorCallbacks.forEach((callback) => {
-      try {
-        callback(errorMessage);
-      } catch (e) {
-        console.warn("Image error callback error:", e);
-      }
-    });
+    this.checkAndTriggerImageCallbacks();
   }
 
   // 使用自定义渲染器填充信息面板
@@ -976,14 +1003,17 @@ export class ViewerPro {
     this.setCurrentIndex(this.currentIndex + direction);
   }
 
-  private setCurrentIndex(index: number) {
+  private setCurrentIndex(
+    index: number,
+    preserveCurrentImage = this.previewContainer.classList.contains("active"),
+  ) {
     if (index < 0 || index >= this.images.length) return;
     const changed = this.currentIndex !== index;
     this.currentIndex = index;
     this.transformEngine.resetSilently();
     this.previewContainer.classList.remove("is-zoomed");
     this.updateThumbnails();
-    this.updatePreview();
+    this.updatePreview(preserveCurrentImage);
     this.preloadAdjacentImages();
     if (changed) {
       this.onIndexChangeCb?.(this.images[this.currentIndex], this.currentIndex);
@@ -1302,6 +1332,7 @@ export class ViewerPro {
 
   // 新增：清理资源的方法
   public destroy() {
+    this.unbindItems();
     this.scrollLock.unlock();
     // 1. Detach DOM gestures (mouse / wheel / touch / dblclick + backdrop)
     if (this.gestureController) {
@@ -1319,6 +1350,8 @@ export class ViewerPro {
       }
       this.activeBlobUrl = null;
     }
+    this.retiredBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.retiredBlobUrls.clear();
     if (this.activeXHR) {
       try {
         this.activeXHR.abort();

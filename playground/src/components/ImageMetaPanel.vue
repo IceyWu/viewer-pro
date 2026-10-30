@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed } from "vue";
-import { getObjVal, customDestr } from "@iceywu/utils";
+import { customDestr, get } from "@iceywu/utils";
 
 const props = defineProps<{
   data: {
@@ -47,7 +47,13 @@ const imgMetaData = computed(() => {
       label: "光圈",
       value: "",
       valFormat: (val: string) => {
-        const num = eval(val) || 0;
+        const numericValue = Number(val);
+        const [numerator, denominator] = val.split("/").map(Number);
+        const num = Number.isFinite(numericValue)
+          ? numericValue
+          : denominator && Number.isFinite(numerator)
+            ? numerator / denominator
+            : 0;
         return `f/${num?.toFixed(1)}`;
       },
     },
@@ -87,7 +93,7 @@ const imgMetaData = computed(() => {
   const exifData = customDestr(props.data?.exif || {}, { customVal: {} });
   
   info_enum.forEach((item) => {
-    const rawValue = getObjVal(exifData, item.key, { value: "" })?.value || "";
+    const rawValue = get(exifData, item.key, "") || "";
     item.value = item.valFormat ? item.valFormat(rawValue) : rawValue;
   });
 

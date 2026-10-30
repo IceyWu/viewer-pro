@@ -15,43 +15,8 @@ import {
 
 export function getViewerTemplate(instanceId = 0): string {
   const suffix = `vp-${instanceId}`;
-  const blurFilterId = `blur-overlay-filter-${suffix}`;
-  const grad1Id = `grad1-${suffix}`;
-  const grad2Id = `grad2-${suffix}`;
-  const grad3Id = `grad3-${suffix}`;
-
   return `
-      <svg style="position: absolute; width: 0; height: 0;">
-        <defs>
-          <filter id="${blurFilterId}" x="-100%" y="-100%" width="300%" height="300%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="2" result="turbulence"/>
-            <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="50" xChannelSelector="R" yChannelSelector="G" result="displacement"/>
-            <feGaussianBlur in="displacement" stdDeviation="40" result="blur"/>
-          </filter>
-        </defs>
-      </svg>
       <div class="image-preview-overlay">
-        <canvas data-vp-role="blurCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;"></canvas>
-        <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0;">
-          <defs>
-            <radialGradient id="${grad1Id}" cx="30%" cy="40%">
-              <stop offset="0%" style="stop-color:rgb(100,100,150);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(50,50,80);stop-opacity:0" />
-            </radialGradient>
-            <radialGradient id="${grad2Id}" cx="70%" cy="60%">
-              <stop offset="0%" style="stop-color:rgb(150,100,100);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(80,50,50);stop-opacity:0" />
-            </radialGradient>
-            <radialGradient id="${grad3Id}" cx="50%" cy="80%">
-              <stop offset="0%" style="stop-color:rgb(100,150,100);stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:rgb(50,80,50);stop-opacity:0" />
-            </radialGradient>
-          </defs>
-          <rect width="100%" height="100%" fill="rgba(30,30,40,0.7)"/>
-          <circle cx="30%" cy="40%" r="40%" fill="url(#${grad1Id})" filter="url(#${blurFilterId})"/>
-          <circle cx="70%" cy="60%" r="40%" fill="url(#${grad2Id})" filter="url(#${blurFilterId})"/>
-          <circle cx="50%" cy="80%" r="35%" fill="url(#${grad3Id})" filter="url(#${blurFilterId})"/>
-        </svg>
       </div>
       <div class="image-preview-content">
         <div class="side-toolbar" data-vp-role="sideToolbar">
