@@ -1,5 +1,11 @@
 # viewer-pro
 
+## 0.2.1
+
+### Patch Changes
+
+- a9c2dd2: Optimize large-gallery thumbnail loading and fix mobile preview safe-area spacing.
+
 ## 0.2.0
 
 ### Features
