@@ -8,6 +8,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Optional branch or commit to verify
+        required: false
+        type: string
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
