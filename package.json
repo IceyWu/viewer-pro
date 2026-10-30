@@ -2,6 +2,7 @@
   "name": "viewer-pro-monorepo",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@12.5.1",
   "description": "A modern image viewer component for web applications",
   "author": "Icey Wu <3128006406@qq.com>",
   "license": "MIT",
@@ -38,7 +39,10 @@
     "build:all": "pnpm --filter viewer-pro build && pnpm --filter docs build",
     "type-check": "pnpm --filter viewer-pro type-check",
     "clean": "pnpm -r exec rm -rf dist node_modules",
-    "release": "pnpm build && changeset publish"
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release:publish": "pnpm build && pnpm changeset publish",
+    "release": "pnpm run release:publish"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
