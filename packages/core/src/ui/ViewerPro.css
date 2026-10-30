@@ -584,16 +584,16 @@
 @media (max-width: 768px) {
   .image-preview-container {
     width: 100vw;
-    height: 100dvh;
     height: 100vh;
+    height: 100dvh;
     inset: 0;
     overflow: hidden;
   }
 
   .image-preview-content {
     width: 100vw;
-    height: 100dvh;
     height: 100vh;
+    height: 100dvh;
     flex-direction: column;
     justify-content: stretch;
     overflow: hidden;
@@ -602,7 +602,8 @@
   .image-preview-main-area {
     width: 100%;
     height: 100%;
-    padding: max(56px, env(safe-area-inset-top)) 16px 132px;
+    padding: max(56px, env(safe-area-inset-top)) 16px
+      calc(132px + env(safe-area-inset-bottom));
     box-sizing: border-box;
   }
 
@@ -617,7 +618,9 @@
     right: 0;
     top: 0;
     z-index: 45;
-    padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+    padding: calc(12px + env(safe-area-inset-top))
+      calc(14px + env(safe-area-inset-right)) 10px
+      calc(14px + env(safe-area-inset-left));
     background: linear-gradient(
       to bottom,
       rgba(0, 0, 0, 0.55),
